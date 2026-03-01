@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../utils/cn";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Minus } from "lucide-react";
 import { PRODUCTS } from "../constants/products";
+import { useCart } from "../context/CartContext";
 
 export function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const product = PRODUCTS.find(p => p.id === id);
+  const { addToCart } = useCart();
 
   if (!product) {
     return (
@@ -28,6 +30,15 @@ export function ProductDetail() {
   const [message, setMessage] = useState("");
   const [cardSide, setCardSide] = useState<"front" | "back">("front");
   const [openAccordion, setOpenAccordion] = useState<string | null>("scent");
+  const [quantity, setQuantity] = useState(1);
+
+  const handleAddToCart = () => {
+    const giftCard = isPremium && (to || message || from) 
+      ? { to, message, from } 
+      : undefined;
+      
+    addToCart(product, quantity, giftCard);
+  };
 
   const toggleAccordion = (id: string) => {
     setOpenAccordion(openAccordion === id ? null : id);
@@ -88,18 +99,44 @@ export function ProductDetail() {
               <span>220g</span>
             </div>
             {isPremium && (
-              <div className="mb-6 inline-block px-3 py-1 border border-gold/30 bg-gold/5 rounded-sm">
-                <p className="text-[9px] uppercase tracking-[0.2em] text-gold">
-                  Customizable Gift Card Included
-                </p>
+              <div className="mb-6 flex flex-col gap-2">
+                <div className="inline-block px-3 py-1 border border-gold/30 bg-gold/5 rounded-sm w-fit">
+                  <p className="text-[9px] uppercase tracking-[0.2em] text-gold">
+                    Customizable Gift Card Included
+                  </p>
+                </div>
+                <div className="inline-block px-3 py-1 border border-gold/30 bg-gold/5 rounded-sm w-fit">
+                  <p className="text-[9px] uppercase tracking-[0.2em] text-gold">
+                    Signature Gold Lid Included
+                  </p>
+                </div>
               </div>
             )}
             <p className="text-xl text-offwhite font-light tracking-wide mb-2">{price}</p>
             <p className="text-[10px] font-mono text-limestone/40">{id}</p>
           </div>
 
-          <div className="mb-12">
-            <button className="w-full py-4 border border-gold/30 hover:border-gold text-xs tracking-[0.2em] uppercase text-gold hover:text-gold-light transition-colors duration-500 relative overflow-hidden group">
+          <div className="mb-12 flex gap-4">
+            <div className="flex items-center justify-between border border-gold/30 px-4 py-3 w-32">
+              <button 
+                onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                className="text-limestone hover:text-gold transition-colors p-1"
+              >
+                <Minus size={14} />
+              </button>
+              <span className="text-xs text-offwhite font-mono">{quantity}</span>
+              <button 
+                onClick={() => setQuantity(quantity + 1)}
+                className="text-limestone hover:text-gold transition-colors p-1"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+            
+            <button 
+              onClick={handleAddToCart}
+              className="flex-1 py-4 border border-gold/30 hover:border-gold text-xs tracking-[0.2em] uppercase text-gold hover:text-gold-light transition-colors duration-500 relative overflow-hidden group"
+            >
               <span className="relative z-10">Add to Sanctuary</span>
               <div className="absolute inset-0 bg-gold/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-[0.76,0,0.24,1]" />
             </button>
