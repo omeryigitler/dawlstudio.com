@@ -14,7 +14,7 @@ export function ProductDetail() {
   if (!product) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <p className="text-gold tracking-widest uppercase text-xs">Product not found</p>
+        <p className="text-gold tracking-widest uppercase text-xs">404: Product not found (ID: {id})</p>
       </div>
     );
   }
