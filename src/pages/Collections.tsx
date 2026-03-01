@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
+import { SlidersHorizontal } from "lucide-react";
 import { cn } from "../utils/cn";
 import { PRODUCTS } from "../constants/products";
 
@@ -8,6 +9,7 @@ export function Collections() {
   const [filterEdition, setFilterEdition] = useState<"All" | "Retail" | "Premium">("All");
   const [filterColor, setFilterColor] = useState<"All" | "White" | "Black">("All");
   const [filterScent, setFilterScent] = useState<"All" | "01" | "02">("All");
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
   const filteredSkus = PRODUCTS.filter(sku => {
     if (filterEdition !== "All" && sku.edition !== filterEdition) return false;
@@ -28,52 +30,89 @@ export function Collections() {
       </header>
 
       {/* Filters */}
-      <div className="flex flex-col items-center mb-24">
-        <div className="flex flex-wrap justify-center gap-12 text-sm tracking-[0.2em] uppercase border-y border-gold/10 py-8 w-full mb-8">
-          <div className="flex gap-6 items-center">
-            <span className="text-limestone/50 font-medium">Edition:</span>
-            {["All", "Retail", "Premium"].map(ed => (
-              <button 
-                key={ed}
-                onClick={() => setFilterEdition(ed as any)}
-                className={cn(
-                  "transition-colors duration-500 font-display text-base",
-                  filterEdition === ed ? "text-gold" : "text-limestone hover:text-offwhite"
-                )}
-              >
-                {ed}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-6 items-center">
-            <span className="text-limestone/50 font-medium">Color:</span>
-            {["All", "White", "Black"].map(c => (
-              <button 
-                key={c}
-                onClick={() => setFilterColor(c as any)}
-                className={cn(
-                  "transition-colors duration-500 font-display text-base",
-                  filterColor === c ? "text-gold" : "text-limestone hover:text-offwhite"
-                )}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-6 items-center">
-            <span className="text-limestone/50 font-medium">Scent:</span>
-            {["All", "01", "02"].map(s => (
-              <button 
-                key={s}
-                onClick={() => setFilterScent(s as any)}
-                className={cn(
-                  "transition-colors duration-500 font-display text-base",
-                  filterScent === s ? "text-gold" : "text-limestone hover:text-offwhite"
-                )}
-              >
-                {s}
-              </button>
-            ))}
+      <div className="flex flex-col items-center mb-16 w-full">
+        {/* Mobile Filter Toggle */}
+        <button 
+          onClick={() => setIsFiltersOpen(!isFiltersOpen)}
+          className="md:hidden flex items-center gap-3 text-xs tracking-[0.2em] uppercase text-limestone border border-gold/20 px-6 py-3 rounded-full hover:bg-gold/5 transition-colors mb-8"
+        >
+          <SlidersHorizontal size={14} />
+          {isFiltersOpen ? "Hide Filters" : "Show Filters"}
+        </button>
+
+        {/* Filter Content */}
+        <div className={cn(
+          "w-full transition-all duration-700 ease-[cubic-bezier(0.76,0,0.24,1)] overflow-hidden md:!max-h-[500px] md:!opacity-100 md:!mb-8",
+          isFiltersOpen ? "max-h-[500px] opacity-100 mb-8" : "max-h-0 opacity-0 mb-0"
+        )}>
+          <div className="flex flex-col md:flex-row md:flex-wrap justify-center gap-10 md:gap-16 text-sm tracking-[0.2em] uppercase border-y border-gold/10 py-8 w-full bg-charcoal-light/30 md:bg-transparent px-6 md:px-0">
+            
+            {/* Edition Filter */}
+            <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center">
+              <span className="text-limestone/40 font-medium text-[10px] md:text-xs tracking-[0.3em] text-center">Edition</span>
+              <div className="flex flex-wrap justify-center gap-6">
+                {["All", "Retail", "Premium"].map(ed => (
+                  <button 
+                    key={ed}
+                    onClick={() => setFilterEdition(ed as any)}
+                    className={cn(
+                      "transition-all duration-500 font-display text-xs md:text-base relative pb-1",
+                      filterEdition === ed ? "text-gold" : "text-limestone hover:text-offwhite"
+                    )}
+                  >
+                    {ed}
+                    {filterEdition === ed && (
+                      <motion.div layoutId="underline-edition" className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Color Filter */}
+            <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center">
+              <span className="text-limestone/40 font-medium text-[10px] md:text-xs tracking-[0.3em] text-center">Color</span>
+              <div className="flex flex-wrap justify-center gap-6">
+                {["All", "White", "Black"].map(c => (
+                  <button 
+                    key={c}
+                    onClick={() => setFilterColor(c as any)}
+                    className={cn(
+                      "transition-all duration-500 font-display text-xs md:text-base relative pb-1",
+                      filterColor === c ? "text-gold" : "text-limestone hover:text-offwhite"
+                    )}
+                  >
+                    {c}
+                    {filterColor === c && (
+                      <motion.div layoutId="underline-color" className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Scent Filter */}
+            <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-center">
+              <span className="text-limestone/40 font-medium text-[10px] md:text-xs tracking-[0.3em] text-center">Scent</span>
+              <div className="flex flex-wrap justify-center gap-6">
+                {["All", "01", "02"].map(s => (
+                  <button 
+                    key={s}
+                    onClick={() => setFilterScent(s as any)}
+                    className={cn(
+                      "transition-all duration-500 font-display text-xs md:text-base relative pb-1",
+                      filterScent === s ? "text-gold" : "text-limestone hover:text-offwhite"
+                    )}
+                  >
+                    {s}
+                    {filterScent === s && (
+                      <motion.div layoutId="underline-scent" className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
           </div>
         </div>
 

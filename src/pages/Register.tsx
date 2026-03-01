@@ -25,11 +25,11 @@ export function Register() {
         className="w-full max-w-md"
       >
         <div className="text-center mb-12">
-          <h1 className="font-display text-3xl md:text-4xl tracking-widest uppercase text-offwhite mb-4">
-            Create Account
+          <h1 className="font-display text-4xl md:text-5xl tracking-widest uppercase mb-4 gold-foil drop-shadow-2xl">
+            CREATE ACCOUNT
           </h1>
-          <p className="text-limestone text-sm tracking-widest uppercase">
-            Join the Sanctuary
+          <p className="text-sm tracking-widest uppercase gold-foil drop-shadow-md">
+            JOIN THE SANCTUARY
           </p>
         </div>
 

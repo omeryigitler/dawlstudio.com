@@ -14,9 +14,9 @@ export function Home() {
         transition={{ duration: 1.5, delay: 0.5, ease: [0.76, 0, 0.24, 1] }}
         className="text-center max-w-3xl mx-auto relative z-50 mt-[-10vh]"
       >
-        <h1 className="text-5xl md:text-7xl lg:text-8xl font-display tracking-tighter text-offwhite mb-8 drop-shadow-2xl">
-          <span className="block mb-2 gold-foil">QUIET</span>
-          <span className="block gold-foil">LUXURY</span>
+        <h1 className="text-5xl md:text-6xl lg:text-7xl font-display tracking-tighter text-offwhite mb-8 drop-shadow-2xl">
+          <span className="block mb-2 gold-foil">ILLUMINATE</span>
+          <span className="block gold-foil">THE CALM</span>
         </h1>
         <p className="text-limestone text-lg md:text-xl font-light tracking-wide max-w-xl mx-auto leading-relaxed drop-shadow-md">
           Hand-poured in Malta. Architectural scents designed for the sanctuary of your space.
