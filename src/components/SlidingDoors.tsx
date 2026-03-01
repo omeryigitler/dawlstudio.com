@@ -28,14 +28,14 @@ export function SlidingDoors({ onComplete }: { onComplete: () => void }) {
         <motion.div 
           exit={{ opacity: 0 }}
           transition={{ duration: 1 }}
-          className="fixed inset-0 z-[100] flex"
+          className="fixed inset-0 z-[100] flex pointer-events-none"
         >
           {/* Left Door */}
           <motion.div
             initial={{ x: 0 }}
             animate={{ x: "-100%" }}
             transition={{ duration: 2.5, ease: [0.76, 0, 0.24, 1], delay: 2 }}
-            className="w-1/2 h-full bg-[#121212] border-r border-[#C5A059]/40 relative overflow-hidden flex justify-end items-center shadow-[10px_0_30px_rgba(0,0,0,0.8)] z-20"
+            className="w-1/2 h-full bg-[#121212] border-r border-[#C5A059]/40 relative overflow-hidden flex justify-end items-center shadow-[10px_0_30px_rgba(0,0,0,0.8)] z-20 pointer-events-auto"
           >
           </motion.div>
 
@@ -44,7 +44,7 @@ export function SlidingDoors({ onComplete }: { onComplete: () => void }) {
             initial={{ x: 0 }}
             animate={{ x: "100%" }}
             transition={{ duration: 2.5, ease: [0.76, 0, 0.24, 1], delay: 2 }}
-            className="w-1/2 h-full bg-[#121212] border-l border-[#C5A059]/40 relative overflow-hidden flex justify-start items-center shadow-[-10px_0_30px_rgba(0,0,0,0.8)] z-20"
+            className="w-1/2 h-full bg-[#121212] border-l border-[#C5A059]/40 relative overflow-hidden flex justify-start items-center shadow-[-10px_0_30px_rgba(0,0,0,0.8)] z-20 pointer-events-auto"
           >
           </motion.div>
 

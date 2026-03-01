@@ -26,10 +26,10 @@ export function Layout() {
       <AnimatePresence mode="wait">
         <motion.main
           key={location.pathname}
-          initial={{ opacity: 0, filter: "blur(10px)" }}
+          initial={{ opacity: 0, filter: "blur(8px)" }}
           animate={{ opacity: 1, filter: "blur(0px)" }}
-          exit={{ opacity: 0, filter: "blur(10px)" }}
-          transition={{ duration: 1.2, ease: [0.76, 0, 0.24, 1] }}
+          exit={{ opacity: 0, filter: "blur(8px)" }}
+          transition={{ duration: 0.4, ease: [0.76, 0, 0.24, 1] }}
           className="flex-grow pt-32 relative z-10"
         >
           <Outlet />
