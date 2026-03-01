@@ -14,7 +14,7 @@ export function Layout() {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen bg-charcoal text-offwhite flex flex-col relative overflow-hidden">
+    <div className="min-h-screen bg-charcoal text-offwhite flex flex-col relative overflow-x-hidden">
       {/* Global Effects */}
       <div className="vignette" />
       <div className="film-grain" />
@@ -26,9 +26,9 @@ export function Layout() {
       <AnimatePresence mode="wait">
         <motion.main
           key={location.pathname}
-          initial={{ opacity: 0, filter: "blur(8px)" }}
-          animate={{ opacity: 1, filter: "blur(0px)" }}
-          exit={{ opacity: 0, filter: "blur(8px)" }}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.4, ease: [0.76, 0, 0.24, 1] }}
           className="flex-grow pt-32 relative z-10"
         >

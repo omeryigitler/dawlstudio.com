@@ -62,7 +62,7 @@ export function Collections() {
                   >
                     {ed}
                     {filterEdition === ed && (
-                      <motion.div layoutId="underline-edition" className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
+                      <motion.div className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
                     )}
                   </button>
                 ))}
@@ -84,7 +84,7 @@ export function Collections() {
                   >
                     {c}
                     {filterColor === c && (
-                      <motion.div layoutId="underline-color" className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
+                      <motion.div className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
                     )}
                   </button>
                 ))}
@@ -106,7 +106,7 @@ export function Collections() {
                   >
                     {s}
                     {filterScent === s && (
-                      <motion.div layoutId="underline-scent" className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
+                      <motion.div className="absolute left-0 right-0 bottom-0 h-[1px] bg-gold" />
                     )}
                   </button>
                 ))}
