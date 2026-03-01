@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
 // You can replace this URL with your own video link later
-const DEFAULT_VIDEO_URL = ""; 
+const DEFAULT_VIDEO_URL = "https://res.cloudinary.com/dnqwjhjuf/video/upload/v1772343684/Mum_bardan_alev_ksm_ad15bcfefa_dhrrau.mp4";
 
 export function HeroVideo() {
   const [videoUrl] = useState<string | null>(DEFAULT_VIDEO_URL || null);
@@ -36,6 +36,7 @@ export function HeroVideo() {
             loop
             muted
             playsInline
+            crossOrigin="anonymous"
             className="absolute inset-0 w-full h-full object-cover"
           />
         )}
