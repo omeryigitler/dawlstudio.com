@@ -128,14 +128,23 @@ export function Checkout() {
     country: "Ireland",
   });
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
+
   useEffect(() => {
     getStripePromise().then(promise => {
-      if (promise) setStripeInstance(promise);
+      if (promise) {
+        setStripeInstance(promise);
+      } else {
+        setInitError("Stripe could not be initialized. Please check your configuration.");
+        setIsLoading(false);
+      }
     });
   }, []);
 
   useEffect(() => {
     if (cartItems.length > 0 && !clientSecret) {
+      setIsLoading(true);
       // SECURITY: Send items to server so it can calculate the total itself
       // and prevent client-side price manipulation.
       const items = cartItems.map(item => ({
@@ -150,11 +159,20 @@ export function Checkout() {
         body: JSON.stringify({ items }),
       })
         .then((res) => {
-          if (!res.ok) throw new Error("Payment initialization failed");
+          if (!res.ok) return res.json().then(data => { throw new Error(data.error || "Payment initialization failed") });
           return res.json();
         })
-        .then((data) => setClientSecret(data.clientSecret))
-        .catch(err => console.error("[DAWL] Failed to fetch payment intent", err));
+        .then((data) => {
+          setClientSecret(data.clientSecret);
+          setIsLoading(false);
+        })
+        .catch(err => {
+          console.error("[DAWL] Failed to fetch payment intent", err);
+          setInitError(err.message);
+          setIsLoading(false);
+        });
+    } else if (cartItems.length === 0) {
+      setIsLoading(false);
     }
   }, [cartItems, clientSecret]);
 
@@ -293,7 +311,17 @@ export function Checkout() {
                 <Lock size={14} className="text-limestone" />
               </h2>
               
-              {clientSecret && stripeInstance ? (
+              {initError ? (
+                <div className="bg-red-400/10 border border-red-400/20 p-8 text-center rounded-2xl">
+                  <p className="text-red-400 text-xs tracking-widest uppercase mb-4">{initError}</p>
+                  <button 
+                    onClick={() => window.location.reload()}
+                    className="text-gold hover:text-gold-light text-[10px] uppercase tracking-widest font-bold underline underline-offset-4"
+                  >
+                    Retry Initialization
+                  </button>
+                </div>
+              ) : clientSecret && stripeInstance ? (
                 <Elements stripe={stripeInstance} options={{ clientSecret, appearance }}>
                   <PaymentForm 
                     amount={cartTotal} 

@@ -132,6 +132,18 @@ async function startServer() {
     });
   });
 
+  app.get("/api/debug/stripe", (req, res) => {
+    const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || process.env.publishable_key || process.env.STRIPE_PUBLISHABLE_KEY;
+    const secKey = process.env.STRIPE_SECRET_KEY || process.env.secret_key;
+    res.json({
+      publishableKeyPresent: !!pubKey,
+      publishableKeyPrefix: pubKey ? pubKey.substring(0, 7) : null,
+      secretKeyPresent: !!secKey,
+      secretKeyPrefix: secKey ? secKey.substring(0, 7) : null,
+      envKeys: Object.keys(process.env).filter(k => k.toLowerCase().includes('stripe') || k.toLowerCase().includes('key'))
+    });
+  });
+
   // Auth Routes
   app.post("/api/auth/register", async (req, res) => {
     try {
@@ -515,8 +527,12 @@ async function startServer() {
     console.log(`[DAWL] 🚀 Server is live!`);
     console.log(`[DAWL] URL: http://0.0.0.0:${PORT}`);
     console.log(`[DAWL] Mode: ${process.env.NODE_ENV || "development"}`);
-    const hasSecretKey = !!(process.env.STRIPE_SECRET_KEY || process.env.secret_key);
-    console.log(`[DAWL] Stripe Key: ${hasSecretKey ? "✅ Present" : "❌ Missing"}`);
+    
+    const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || process.env.publishable_key || process.env.STRIPE_PUBLISHABLE_KEY;
+    const secKey = process.env.STRIPE_SECRET_KEY || process.env.secret_key;
+    
+    console.log(`[DAWL] Stripe Publishable Key: ${pubKey ? "✅ Present (" + pubKey.substring(0, 7) + "...)" : "❌ Missing"}`);
+    console.log(`[DAWL] Stripe Secret Key: ${secKey ? "✅ Present (" + secKey.substring(0, 7) + "...)" : "❌ Missing"}`);
     console.log(`[DAWL] Price Map: ${priceMap ? "✅ Loaded" : "❌ Not Found"}`);
   });
 }
