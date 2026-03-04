@@ -2,28 +2,40 @@ import React, { useEffect } from "react";
 import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "../context/ToastContext";
 
+// NOTE: DO NOT USE BROWSER ALERTS. USE useToast() FOR ALL NOTIFICATIONS.
 export function SocialAuth() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // Validate origin
-      if (!event.origin.endsWith('.run.app') && !event.origin.includes('localhost')) {
+      // Validate origin - be more flexible for dev environments
+      const origin = event.origin;
+      const isValidOrigin = 
+        origin.endsWith('.run.app') || 
+        origin.includes('localhost') || 
+        origin.includes('127.0.0.1') ||
+        origin.includes('dawlstudio.com');
+
+      if (!isValidOrigin) {
+        console.warn(`[DAWL Auth] Blocked message from unauthorized origin: ${origin}`);
         return;
       }
 
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         const { token, user } = event.data;
         login(token, user);
+        showToast(`Welcome back, ${user.firstName}!`, "success");
         navigate("/");
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [login, navigate]);
+  }, [login, navigate, showToast]);
 
   const handleGoogleLogin = async () => {
     try {
@@ -31,18 +43,19 @@ export function SocialAuth() {
       const { url, error } = await response.json();
       
       if (error) {
-        alert(error);
+        showToast(error, "error");
         return;
       }
 
       window.open(url, "google_oauth", "width=600,height=700");
     } catch (err) {
       console.error("Google login failed", err);
+      showToast("Failed to connect to Google. Please try again.", "error");
     }
   };
 
   const handleAppleLogin = () => {
-    alert("Apple Login: Coming Soon! (Waiting for Developer Account)");
+    showToast("Apple Login: Coming Soon! (Waiting for Developer Account)", "info");
   };
 
   return (

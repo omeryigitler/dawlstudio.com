@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { ShoppingBag, Menu, User, X, LogOut, LayoutDashboard } from "lucide-react";
+import { ShoppingBag, Menu, User, X, LogOut, LayoutDashboard, Package } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 
 export function Navbar() {
   const { openCart, cartItems } = useCart();
   const { user, logout } = useAuth();
+  const { showToast } = useToast();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const itemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
@@ -56,11 +58,21 @@ export function Navbar() {
                     <LayoutDashboard size={18} strokeWidth={1.5} />
                   </Link>
                 )}
+                <Link 
+                  to="/orders"
+                  className="text-limestone hover:text-gold transition-colors duration-500"
+                  title="My Orders"
+                >
+                  <Package size={18} strokeWidth={1.5} />
+                </Link>
                 <span className="text-[10px] tracking-widest uppercase text-gold hidden lg:block">
                   {user.firstName}
                 </span>
                 <button 
-                  onClick={logout}
+                  onClick={() => {
+                    logout();
+                    showToast("Signed out successfully", "info");
+                  }}
                   className="text-limestone hover:text-gold transition-colors duration-500"
                   title="Sign Out"
                 >
@@ -134,9 +146,18 @@ export function Navbar() {
                       Admin Panel
                     </Link>
                   )}
+                  <Link 
+                    to="/orders" 
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="flex items-center gap-3 hover:text-gold transition-colors duration-500"
+                  >
+                    <Package size={16} strokeWidth={1.5} />
+                    My Orders
+                  </Link>
                   <button 
                     onClick={() => {
                       logout();
+                      showToast("Signed out successfully", "info");
                       setIsMobileMenuOpen(false);
                     }}
                     className="flex items-center gap-3 hover:text-gold transition-colors duration-500"

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
+import { useToast } from "../context/ToastContext";
 import { Users, Calendar, Mail, Shield, Package, Truck, ExternalLink, Box } from "lucide-react";
 
 interface UserData {
@@ -26,6 +27,7 @@ interface OrderData {
 
 export function AdminDashboard() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserData[]>([]);
   const [orders, setOrders] = useState<OrderData[]>([]);
@@ -75,8 +77,9 @@ export function AdminDashboard() {
       const ordersRes = await fetch("/api/admin/orders", { headers: { Authorization: `Bearer ${token}` } });
       const ordersData = await ordersRes.json();
       setOrders(ordersData);
+      showToast(`Order ${orderId} has been marked as shipped.`, "success");
     } catch (err: any) {
-      alert(err.message);
+      showToast(err.message, "error");
     }
   };
 

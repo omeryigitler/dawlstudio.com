@@ -1,5 +1,12 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
+
+// NOTE: For Stripe Webhooks in production, use: https://www.dawlstudio.com/api/webhook
+// For Preview/Dev environments, use: <Shared App URL>/api/webhook
+// For Google OAuth Redirect URI in production, use: https://www.dawlstudio.com/api/auth/google/callback
+// For Preview/Dev environments, use: <Shared App URL>/api/auth/google/callback
+// NOTE: DO NOT USE BROWSER ALERTS. USE useToast() FOR ALL NOTIFICATIONS.
+
 import Stripe from "stripe";
 import dotenv from "dotenv";
 import path from "path";
@@ -97,7 +104,11 @@ if (fs.existsSync(priceMapPath)) {
 
 function getStripe() {
   if (!stripe) {
-    const key = process.env.STRIPE_SECRET_KEY || process.env.secret_key;
+    const key = process.env.STRIPE_SECRET_KEY || 
+                process.env.secret_key || 
+                process.env.STRIPE_SEC_KEY ||
+                process.env.SECRET_KEY;
+                
     if (!key) {
       console.warn("[DAWL] Stripe secret key is missing. Payment features will be disabled.");
       return null;
@@ -127,20 +138,38 @@ async function startServer() {
 
   // API Routes
   app.get("/api/config", (req, res) => {
-    res.json({
-      publishableKey: process.env.VITE_STRIPE_PUBLIC_KEY || process.env.publishable_key || process.env.STRIPE_PUBLISHABLE_KEY
-    });
+    const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || 
+                   process.env.STRIPE_PUBLISHABLE_KEY || 
+                   process.env.publishable_key || 
+                   process.env.STRIPE_PUB_KEY ||
+                   process.env.PUBLIC_KEY;
+    res.json({ publishableKey: pubKey });
   });
 
   app.get("/api/debug/stripe", (req, res) => {
-    const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || process.env.publishable_key || process.env.STRIPE_PUBLISHABLE_KEY;
-    const secKey = process.env.STRIPE_SECRET_KEY || process.env.secret_key;
+    const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || 
+                   process.env.STRIPE_PUBLISHABLE_KEY || 
+                   process.env.publishable_key || 
+                   process.env.STRIPE_PUB_KEY ||
+                   process.env.PUBLIC_KEY;
+                   
+    const secKey = process.env.STRIPE_SECRET_KEY || 
+                   process.env.secret_key || 
+                   process.env.STRIPE_SEC_KEY ||
+                   process.env.SECRET_KEY;
+                   
     res.json({
       publishableKeyPresent: !!pubKey,
       publishableKeyPrefix: pubKey ? pubKey.substring(0, 7) : null,
       secretKeyPresent: !!secKey,
       secretKeyPrefix: secKey ? secKey.substring(0, 7) : null,
-      envKeys: Object.keys(process.env).filter(k => k.toLowerCase().includes('stripe') || k.toLowerCase().includes('key'))
+      allEnvKeys: Object.keys(process.env).sort(),
+      stripeRelatedKeys: Object.keys(process.env).filter(k => 
+        k.toLowerCase().includes('stripe') || 
+        k.toLowerCase().includes('key') || 
+        k.toLowerCase().includes('secret') ||
+        k.toLowerCase().includes('pub')
+      )
     });
   });
 
@@ -192,11 +221,15 @@ async function startServer() {
   // Google OAuth Routes
   app.get("/api/auth/google/url", (req, res) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    let appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    if (appUrl.endsWith('/')) appUrl = appUrl.slice(0, -1);
+    
     const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${appUrl}/api/auth/google/callback`;
     
+    console.log(`[DAWL Auth] Generating Google OAuth URL. ClientID: ${clientId ? 'Present' : 'MISSING'}, RedirectURI: ${redirectUri}`);
+
     if (!clientId) {
-      return res.status(500).json({ error: "Google Client ID not configured" });
+      return res.status(500).json({ error: "Google Client ID not configured in Secrets (🔒)" });
     }
 
     const params = new URLSearchParams({
@@ -213,13 +246,23 @@ async function startServer() {
   });
 
   app.get("/api/auth/google/callback", async (req, res) => {
-    const { code } = req.query;
+    const { code, error: googleError } = req.query;
+    if (googleError) {
+      console.error(`[DAWL Auth] Google OAuth Error: ${googleError}`);
+      return res.status(400).send(`Authentication failed: ${googleError}`);
+    }
+
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    let appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    if (appUrl.endsWith('/')) appUrl = appUrl.slice(0, -1);
+    
     const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${appUrl}/api/auth/google/callback`;
 
+    console.log(`[DAWL Auth] Callback received. Code: ${code ? 'Present' : 'MISSING'}`);
+
     if (!code || !clientId || !clientSecret) {
+      console.error(`[DAWL Auth] Missing code or config. ClientID: ${clientId ? 'OK' : 'MISSING'}, ClientSecret: ${clientSecret ? 'OK' : 'MISSING'}`);
       return res.status(400).send("Missing OAuth configuration or code");
     }
 
@@ -308,35 +351,6 @@ async function startServer() {
 
   // --- ORDER & SHIPPING INFRASTRUCTURE ---
 
-  // 1. Create Order (Simulated after payment)
-  app.post("/api/orders", async (req, res) => {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-      const token = authHeader.split(" ")[1];
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-
-      const { items, total, shippingAddress } = req.body;
-      const orderId = `DWL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-
-      db.prepare(
-        "INSERT INTO orders (id, userId, total, items, shippingAddress) VALUES (?, ?, ?, ?, ?)"
-      ).run(orderId, decoded.id, total, JSON.stringify(items), JSON.stringify(shippingAddress));
-
-      // 2. Simulate ERP/WMS Integration: Notify Warehouse
-      console.log(`[DAWL WMS] Order ${orderId} sent to warehouse for processing.`);
-      
-      // Add initial update
-      db.prepare(
-        "INSERT INTO order_updates (orderId, status, location, description) VALUES (?, ?, ?, ?)"
-      ).run(orderId, 'pending', 'Warehouse', 'Order received and being processed.');
-
-      res.status(201).json({ orderId });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // 3. Admin: Simulate Shipping (WMS -> Carrier API)
   app.post("/api/admin/orders/:id/ship", async (req, res) => {
     try {
@@ -402,6 +416,21 @@ async function startServer() {
     }
   });
 
+  // 5.1 Get User Orders
+  app.get("/api/user/orders", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+      const token = authHeader.split(" ")[1];
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+
+      const orders = db.prepare("SELECT * FROM orders WHERE userId = ? ORDER BY createdAt DESC").all();
+      res.json(orders);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // 6. Admin: Get All Orders
   app.get("/api/admin/orders", async (req, res) => {
     try {
@@ -422,7 +451,12 @@ async function startServer() {
 
   app.post("/api/create-payment-intent", async (req, res) => {
     try {
-      const { items, currency = "eur" } = req.body;
+      const authHeader = req.headers.authorization;
+      if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+      const token = authHeader.split(" ")[1];
+      const decoded: any = jwt.verify(token, JWT_SECRET);
+
+      const { items, shippingAddress, currency = "eur" } = req.body;
       const stripeClient = getStripe();
 
       if (!stripeClient) {
@@ -434,19 +468,15 @@ async function startServer() {
       // SECURITY: Calculate total on server using the price map
       if (priceMap && priceMap.items) {
         for (const item of items) {
-          // item.id here should be the SKU
           const mappedItem = priceMap.items[item.id];
           if (mappedItem) {
             amount += mappedItem.unitAmount * item.quantity;
           } else {
             console.warn(`[DAWL] SKU ${item.id} not found in price map.`);
-            // Fallback or error? For security, we should probably error or use a safe fallback
-            // For now, let's use the price sent by client ONLY if not in map (less secure but flexible for dev)
             amount += (item.price * 100) * item.quantity;
           }
         }
       } else {
-        // Fallback to client-provided prices if map doesn't exist yet
         amount = items.reduce((acc: number, item: any) => acc + (item.price * 100 * item.quantity), 0);
       }
 
@@ -454,19 +484,31 @@ async function startServer() {
         return res.status(400).json({ error: "Invalid payment amount." });
       }
 
+      // 1. Create a 'pending' order first
+      const orderId = `DWL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      db.prepare(
+        "INSERT INTO orders (id, userId, total, items, shippingAddress, status) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run(orderId, decoded.id, amount / 100, JSON.stringify(items), JSON.stringify(shippingAddress), 'pending');
+
+      // 2. Add initial update
+      db.prepare(
+        "INSERT INTO order_updates (orderId, status, location, description) VALUES (?, ?, ?, ?)"
+      ).run(orderId, 'pending', 'Warehouse', 'Order received and awaiting payment confirmation.');
+
+      // 3. Create Payment Intent with orderId in metadata
       const paymentIntent = await stripeClient.paymentIntents.create({
-        amount: Math.round(amount), // amount is already in cents
+        amount: Math.round(amount),
         currency,
         automatic_payment_methods: {
           enabled: true,
         },
         metadata: {
           integration_check: "accept_a_payment",
-          order_id: `order_${Date.now()}`,
+          order_id: orderId,
         },
       });
 
-      res.json({ clientSecret: paymentIntent.client_secret });
+      res.json({ clientSecret: paymentIntent.client_secret, orderId });
     } catch (error: any) {
       console.error("[DAWL] Stripe Error:", error.message);
       res.status(500).json({ error: "An error occurred while processing your payment." });
@@ -495,9 +537,26 @@ async function startServer() {
     // Handle the event
     switch (event.type) {
       case "payment_intent.succeeded":
-        const paymentIntent = event.data.object;
+        const paymentIntent: any = event.data.object;
         console.log(`[DAWL] PaymentIntent for ${paymentIntent.amount} was successful!`);
-        // Here you would fulfill the order (e.g., send email, update DB)
+        
+        // Fulfill the order in the database
+        const orderIdFromMetadata = paymentIntent.metadata.order_id;
+        if (orderIdFromMetadata) {
+          const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(orderIdFromMetadata);
+          if (order) {
+            db.prepare("UPDATE orders SET status = 'paid' WHERE id = ?").run(orderIdFromMetadata);
+            db.prepare(
+              "INSERT INTO order_updates (orderId, status, location, description) VALUES (?, ?, ?, ?)"
+            ).run(orderIdFromMetadata, 'paid', 'System', 'Payment confirmed via Stripe. Order is now being processed.');
+            console.log(`[DAWL] Order ${orderIdFromMetadata} marked as paid via webhook.`);
+          } else {
+            console.error(`[DAWL] Webhook Error: Order ${orderIdFromMetadata} not found in database.`);
+          }
+        }
+        break;
+      case "payment_intent.payment_failed":
+        console.log(`[DAWL] Payment failed for ${event.data.object.id}`);
         break;
       default:
         console.log(`[DAWL] Unhandled event type ${event.type}`);
@@ -528,8 +587,16 @@ async function startServer() {
     console.log(`[DAWL] URL: http://0.0.0.0:${PORT}`);
     console.log(`[DAWL] Mode: ${process.env.NODE_ENV || "development"}`);
     
-    const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || process.env.publishable_key || process.env.STRIPE_PUBLISHABLE_KEY;
-    const secKey = process.env.STRIPE_SECRET_KEY || process.env.secret_key;
+    const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || 
+                   process.env.STRIPE_PUBLISHABLE_KEY || 
+                   process.env.publishable_key || 
+                   process.env.STRIPE_PUB_KEY ||
+                   process.env.PUBLIC_KEY;
+                   
+    const secKey = process.env.STRIPE_SECRET_KEY || 
+                   process.env.secret_key || 
+                   process.env.STRIPE_SEC_KEY ||
+                   process.env.SECRET_KEY;
     
     console.log(`[DAWL] Stripe Publishable Key: ${pubKey ? "✅ Present (" + pubKey.substring(0, 7) + "...)" : "❌ Missing"}`);
     console.log(`[DAWL] Stripe Secret Key: ${secKey ? "✅ Present (" + secKey.substring(0, 7) + "...)" : "❌ Missing"}`);

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
 import { useCart } from "../context/CartContext";
+import { useToast } from "../context/ToastContext";
 import { ChevronRight, Lock, CreditCard, Apple } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
@@ -30,7 +31,7 @@ const getStripePromise = async () => {
   return stripePromise;
 };
 
-function PaymentForm({ amount, cartItems, formData, onSuccess }: { amount: number; cartItems: any[]; formData: any; onSuccess: () => void }) {
+function PaymentForm({ amount, onSuccess }: { amount: number; onSuccess: () => void }) {
   const stripe = useStripe();
   const elements = useElements();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -44,40 +45,18 @@ function PaymentForm({ amount, cartItems, formData, onSuccess }: { amount: numbe
     setIsProcessing(true);
     setErrorMessage(null);
 
-    const { error, paymentIntent } = await stripe.confirmPayment({
+    const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
         return_url: `${window.location.origin}/checkout/success`,
       },
-      redirect: "if_required",
     });
 
     if (error) {
       setErrorMessage(error.message || "An unexpected error occurred.");
       setIsProcessing(false);
-    } else if (paymentIntent && paymentIntent.status === "succeeded") {
-      try {
-        // Create order in database
-        const token = localStorage.getItem("token");
-        await fetch("/api/orders", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            items: cartItems,
-            total: amount,
-            shippingAddress: formData,
-          }),
-        });
-        onSuccess();
-      } catch (err) {
-        console.error("Order creation failed", err);
-        // Still call onSuccess because payment was successful
-        onSuccess();
-      }
     }
+    // If no error, Stripe handles the redirect to return_url
   };
 
   return (
@@ -119,6 +98,7 @@ function PaymentForm({ amount, cartItems, formData, onSuccess }: { amount: numbe
 export function Checkout() {
   const { cartItems, cartTotal, clearCart } = useCart();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [stripeInstance, setStripeInstance] = useState<any>(null);
   const [formData, setFormData] = useState({
@@ -128,7 +108,8 @@ export function Checkout() {
     country: "Ireland",
   });
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -136,45 +117,58 @@ export function Checkout() {
       if (promise) {
         setStripeInstance(promise);
       } else {
-        setInitError("Stripe could not be initialized. Please check your configuration.");
-        setIsLoading(false);
+        setInitError("Stripe keys are missing. Please add 'STRIPE_PUBLISHABLE_KEY' and 'STRIPE_SECRET_KEY' to your Secrets (🔒).");
       }
+      setIsInitializing(false);
     });
   }, []);
 
-  useEffect(() => {
-    if (cartItems.length > 0 && !clientSecret) {
-      setIsLoading(true);
-      // SECURITY: Send items to server so it can calculate the total itself
-      // and prevent client-side price manipulation.
+  const handleProceedToPayment = async () => {
+    if (!formData.fullName || !formData.address || !formData.city) {
+      showToast("Please fill in all shipping details.", "warning");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        navigate("/login?redirect=checkout");
+        return;
+      }
+
       const items = cartItems.map(item => ({
         id: item.product.id,
         price: parseFloat(item.product.price.replace('€', '')),
         quantity: item.quantity
       }));
 
-      fetch("/api/create-payment-intent", {
+      const res = await fetch("/api/create-payment-intent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      })
-        .then((res) => {
-          if (!res.ok) return res.json().then(data => { throw new Error(data.error || "Payment initialization failed") });
-          return res.json();
-        })
-        .then((data) => {
-          setClientSecret(data.clientSecret);
-          setIsLoading(false);
-        })
-        .catch(err => {
-          console.error("[DAWL] Failed to fetch payment intent", err);
-          setInitError(err.message);
-          setIsLoading(false);
-        });
-    } else if (cartItems.length === 0) {
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          items,
+          shippingAddress: formData
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to initialize payment");
+      }
+
+      const data = await res.json();
+      setClientSecret(data.clientSecret);
+    } catch (err: any) {
+      console.error("[DAWL] Failed to fetch payment intent", err);
+      setInitError(err.message);
+    } finally {
       setIsLoading(false);
     }
-  }, [cartItems, clientSecret]);
+  };
 
   const handleSuccess = () => {
     clearCart();
@@ -311,7 +305,12 @@ export function Checkout() {
                 <Lock size={14} className="text-limestone" />
               </h2>
               
-              {initError ? (
+              {isInitializing ? (
+                <div className="h-64 flex flex-col items-center justify-center bg-charcoal-light border border-gold/10 animate-pulse">
+                  <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin mb-4" />
+                  <div className="text-[10px] uppercase tracking-widest text-gold/60">Initializing Secure Vault...</div>
+                </div>
+              ) : initError ? (
                 <div className="bg-red-400/10 border border-red-400/20 p-8 text-center rounded-2xl">
                   <p className="text-red-400 text-xs tracking-widest uppercase mb-4">{initError}</p>
                   <button 
@@ -325,15 +324,21 @@ export function Checkout() {
                 <Elements stripe={stripeInstance} options={{ clientSecret, appearance }}>
                   <PaymentForm 
                     amount={cartTotal} 
-                    cartItems={cartItems}
-                    formData={formData}
                     onSuccess={handleSuccess} 
                   />
                 </Elements>
               ) : (
-                <div className="h-64 flex flex-col items-center justify-center bg-charcoal-light border border-gold/10 animate-pulse">
-                  <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin mb-4" />
-                  <div className="text-[10px] uppercase tracking-widest text-gold/60">Initializing Secure Vault...</div>
+                <div className="p-8 border border-gold/10 bg-gold/5 text-center">
+                  <p className="text-limestone text-[10px] uppercase tracking-widest mb-6">
+                    Complete your shipping details to proceed to secure payment.
+                  </p>
+                  <button
+                    onClick={handleProceedToPayment}
+                    disabled={isLoading}
+                    className="px-8 py-4 bg-gold hover:bg-gold-light text-charcoal text-[10px] font-bold tracking-[0.2em] uppercase transition-colors duration-500 disabled:opacity-50"
+                  >
+                    {isLoading ? "Preparing Vault..." : "Proceed to Payment"}
+                  </button>
                 </div>
               )}
             </section>

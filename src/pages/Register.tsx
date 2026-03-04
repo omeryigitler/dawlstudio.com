@@ -3,10 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { SocialAuth } from "../components/SocialAuth";
+import { useToast } from "../context/ToastContext";
 
+// NOTE: DO NOT USE BROWSER ALERTS. USE useToast() FOR ALL NOTIFICATIONS.
 export function Register() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { showToast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -35,9 +38,11 @@ export function Register() {
       }
 
       login(data.token, data.user);
+      showToast(`Welcome to the sanctuary, ${data.user.firstName}!`, "success");
       navigate("/");
     } catch (err: any) {
       setError(err.message);
+      showToast(err.message, "error");
     } finally {
       setIsProcessing(false);
     }

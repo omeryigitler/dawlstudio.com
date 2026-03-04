@@ -18,13 +18,11 @@ export function CheckoutSuccess() {
       if (!token) return;
 
       try {
-        const response = await fetch("/api/admin/orders", { // In a real app, use a user-specific endpoint
+        const response = await fetch("/api/user/orders", {
           headers: { Authorization: `Bearer ${token}` }
         });
         const orders = await response.json();
-        if (orders.length > 0) {
-          // Filter for this user's most recent order if admin endpoint returns all
-          // For now, let's assume it's the first one returned (sorted by date desc)
+        if (orders && orders.length > 0) {
           setOrderId(orders[0].id);
         }
       } catch (err) {

@@ -1,0 +1,34 @@
+{
+  "items": {
+    "DWL-01-W": {
+      "unitAmount": 4500,
+      "currency": "eur",
+      "name": "Scent 01 — White Edition"
+    },
+    "DWL-01-B": {
+      "unitAmount": 4500,
+      "currency": "eur",
+      "name": "Scent 01 — Black Edition"
+    },
+    "DWL-02-W": {
+      "unitAmount": 4500,
+      "currency": "eur",
+      "name": "Scent 02 — White Edition"
+    },
+    "DWL-02-B": {
+      "unitAmount": 4500,
+      "currency": "eur",
+      "name": "Scent 02 — Black Edition"
+    },
+    "DWL-PREM-01": {
+      "unitAmount": 8500,
+      "currency": "eur",
+      "name": "Premium Scent 01"
+    },
+    "DWL-PREM-02": {
+      "unitAmount": 8500,
+      "currency": "eur",
+      "name": "Premium Scent 02"
+    }
+  }
+}
