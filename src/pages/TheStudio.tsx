@@ -27,7 +27,13 @@ export function TheStudio() {
           className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center"
         >
           <div className="aspect-square bg-charcoal-light border border-gold/5 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-tr from-charcoal via-transparent to-gold/5" />
+            <img 
+              src="https://picsum.photos/seed/studio1/800/800" 
+              alt="Studio Sanctuary" 
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity duration-1000"
+            />
+            <div className="absolute inset-0 bg-gradient-to-tr from-charcoal via-transparent to-gold/5 pointer-events-none" />
           </div>
           <div>
             <h2 className="font-display text-2xl tracking-widest text-gold mb-6 uppercase">Sanctuary</h2>
@@ -52,7 +58,13 @@ export function TheStudio() {
             </p>
           </div>
           <div className="order-1 md:order-2 aspect-square bg-charcoal-light border border-gold/5 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-bl from-charcoal via-transparent to-gold/5" />
+            <img 
+              src="https://picsum.photos/seed/studio2/800/800" 
+              alt="Studio Materiality" 
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity duration-1000"
+            />
+            <div className="absolute inset-0 bg-gradient-to-bl from-charcoal via-transparent to-gold/5 pointer-events-none" />
           </div>
         </motion.div>
 

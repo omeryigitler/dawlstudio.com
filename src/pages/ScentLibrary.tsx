@@ -83,8 +83,14 @@ export function ScentLibrary() {
             </div>
 
             <div className={`order-1 ${idx % 2 === 0 ? 'lg:order-2' : 'lg:order-1'} aspect-square bg-charcoal-light border border-gold/5 relative overflow-hidden flex items-center justify-center`}>
-              <div className="absolute inset-0 bg-gradient-to-br from-charcoal via-transparent to-gold/5" />
-              <span className="font-display text-8xl text-gold/10 mix-blend-overlay">{scent.id}</span>
+              <img 
+                src={`https://picsum.photos/seed/scent${scent.id}/800/800`} 
+                alt={scent.name} 
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover opacity-40 hover:opacity-80 transition-opacity duration-1000"
+              />
+              <div className="absolute inset-0 bg-gradient-to-br from-charcoal via-transparent to-gold/5 pointer-events-none" />
+              <span className="absolute font-display text-8xl text-gold/10 mix-blend-overlay pointer-events-none">{scent.id}</span>
             </div>
           </motion.div>
         ))}

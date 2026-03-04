@@ -1,19 +1,44 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
+import { useAuth } from "../context/AuthContext";
+import { SocialAuth } from "../components/SocialAuth";
 
 export function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    email: "",
+    password: ""
+  });
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
-    // Simulate login processing
-    setTimeout(() => {
-      setIsProcessing(false);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Login failed");
+      }
+
+      login(data.token, data.user);
       navigate("/");
-    }, 1500);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -34,6 +59,11 @@ export function Login() {
         </div>
 
         <form onSubmit={handleLogin} className="space-y-8">
+          {error && (
+            <div className="text-red-400 text-[10px] uppercase tracking-widest bg-red-400/10 p-4 border border-red-400/20">
+              {error}
+            </div>
+          )}
           <div>
             <label className="block text-[10px] uppercase tracking-widest text-limestone/60 mb-2">
               Email Address
@@ -41,6 +71,8 @@ export function Login() {
             <input 
               type="email" 
               required
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full bg-transparent border-b border-gold/30 pb-2 text-offwhite focus:outline-none focus:border-gold transition-colors font-light"
               placeholder="Enter your email"
             />
@@ -58,6 +90,8 @@ export function Login() {
             <input 
               type="password" 
               required
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               className="w-full bg-transparent border-b border-gold/30 pb-2 text-offwhite focus:outline-none focus:border-gold transition-colors font-light"
               placeholder="Enter your password"
             />
@@ -71,6 +105,8 @@ export function Login() {
             {isProcessing ? "Authenticating..." : "Sign In"}
           </button>
         </form>
+
+        <SocialAuth />
 
         <div className="mt-12 text-center border-t border-gold/10 pt-8">
           <p className="text-xs text-limestone tracking-widest uppercase mb-4">

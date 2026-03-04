@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { ShoppingBag, Menu, User, X } from "lucide-react";
+import { ShoppingBag, Menu, User, X, LogOut, LayoutDashboard } from "lucide-react";
 import { useCart } from "../context/CartContext";
+import { useAuth } from "../context/AuthContext";
 
 export function Navbar() {
   const { openCart, cartItems } = useCart();
+  const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const itemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
@@ -43,12 +45,36 @@ export function Navbar() {
             <Link to="/contact" className="hover:text-gold transition-colors duration-500">Contact</Link>
           </div>
           <div className="flex items-center gap-6">
-            <Link 
-              to="/login"
-              className="text-limestone hover:text-gold transition-colors duration-500"
-            >
-              <User size={20} strokeWidth={1.5} />
-            </Link>
+            {user ? (
+              <div className="flex items-center gap-4">
+                {user.role === 'admin' && (
+                  <Link 
+                    to="/admin"
+                    className="text-gold hover:text-gold-light transition-colors duration-500"
+                    title="Admin Panel"
+                  >
+                    <LayoutDashboard size={18} strokeWidth={1.5} />
+                  </Link>
+                )}
+                <span className="text-[10px] tracking-widest uppercase text-gold hidden lg:block">
+                  {user.firstName}
+                </span>
+                <button 
+                  onClick={logout}
+                  className="text-limestone hover:text-gold transition-colors duration-500"
+                  title="Sign Out"
+                >
+                  <LogOut size={18} strokeWidth={1.5} />
+                </button>
+              </div>
+            ) : (
+              <Link 
+                to="/login"
+                className="text-limestone hover:text-gold transition-colors duration-500"
+              >
+                <User size={20} strokeWidth={1.5} />
+              </Link>
+            )}
             <button 
               onClick={openCart}
               className="text-limestone hover:text-gold transition-colors duration-500 relative"
@@ -95,10 +121,36 @@ export function Navbar() {
             </div>
 
             <div className="mt-auto pt-8 border-t border-gold/10 flex flex-col items-center gap-6 text-xs tracking-widest uppercase text-limestone">
-              <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 hover:text-gold transition-colors duration-500">
-                <User size={16} strokeWidth={1.5} />
-                Sign In / Register
-              </Link>
+              {user ? (
+                <div className="flex flex-col items-center gap-4">
+                  <span className="text-gold">{user.firstName} {user.lastName}</span>
+                  {user.role === 'admin' && (
+                    <Link 
+                      to="/admin" 
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="flex items-center gap-3 text-gold hover:text-gold-light transition-colors duration-500"
+                    >
+                      <LayoutDashboard size={16} strokeWidth={1.5} />
+                      Admin Panel
+                    </Link>
+                  )}
+                  <button 
+                    onClick={() => {
+                      logout();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className="flex items-center gap-3 hover:text-gold transition-colors duration-500"
+                  >
+                    <LogOut size={16} strokeWidth={1.5} />
+                    Sign Out
+                  </button>
+                </div>
+              ) : (
+                <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 hover:text-gold transition-colors duration-500">
+                  <User size={16} strokeWidth={1.5} />
+                  Sign In / Register
+                </Link>
+              )}
             </div>
           </motion.div>
         )}
