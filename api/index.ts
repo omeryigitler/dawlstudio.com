@@ -13,7 +13,7 @@ import Stripe from "stripe";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
-import { neon } from "@neondatabase/serverless";
+import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
@@ -26,43 +26,54 @@ if (!process.env.JWT_SECRET) {
 }
 const JWT_SECRET = process.env.JWT_SECRET || "dawl-secret-key-2026";
 
-// Initialize Database
-let sql: any;
-if (process.env.POSTGRES_URL) {
+// Initialize Database (Supabase)
+let supabase: any;
+if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
   try {
-    sql = neon(process.env.POSTGRES_URL);
+    supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   } catch (err: any) {
-    console.warn("[DAWL] WARNING: Invalid POSTGRES_URL. Database features will be disabled.", err.message);
-    sql = async () => { throw new Error("Database not configured correctly."); };
+    console.warn("[DAWL] WARNING: Invalid Supabase configuration. Database features will be disabled.", err.message);
+    supabase = null;
   }
 } else {
-  console.warn("[DAWL] WARNING: POSTGRES_URL is not set. Database features will be disabled.");
-  sql = async () => { throw new Error("Database not configured. Please set POSTGRES_URL."); };
+  console.warn("[DAWL] WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set. Database features will be disabled.");
+  supabase = null;
 }
 
-// Migration: We assume tables are created via Neon SQL Editor as per instructions.
+// Migration: We assume tables are created via Supabase SQL Editor.
 // But we can add a check/create for the default admin here.
 
 const createAdmin = async () => {
-  if (!process.env.POSTGRES_URL) return;
+  if (!supabase) return;
   try {
     const adminEmail = "admin@dawl.studio"; // Default admin email
-    const existingAdmin = await sql`SELECT * FROM users WHERE email = ${adminEmail}`;
-    if (existingAdmin.length === 0) {
+    const { data: existingAdmin, error: fetchError } = await supabase.from('users').select('*').eq('email', adminEmail);
+    
+    if (fetchError) {
+      console.error("[DAWL] Error checking admin:", fetchError);
+      return;
+    }
+
+    if (!existingAdmin || existingAdmin.length === 0) {
       const hashedPassword = await bcrypt.hash("admin123", 10);
-      await sql`
-        INSERT INTO users (email, password, "firstName", "lastName", role) 
-        VALUES (${adminEmail}, ${hashedPassword}, 'Admin', 'User', 'admin')
-      `;
-      console.log("[DAWL] Default admin created: admin@dawl.studio / admin123");
+      const { error: insertError } = await supabase.from('users').insert([{
+        email: adminEmail,
+        password: hashedPassword,
+        firstName: 'Admin',
+        lastName: 'User',
+        role: 'admin'
+      }]);
+      
+      if (insertError) {
+         console.error("[DAWL] Error creating admin:", insertError);
+      } else {
+         console.log("[DAWL] Default admin created: admin@dawl.studio / admin123");
+      }
     }
   } catch (err) {
     console.error("[DAWL] Error creating default admin:", err);
   }
 };
-// We won't block startup, but we'll try to create it.
-// Note: In a serverless environment, this might run on every cold start.
-// It's safe because of the check, but consider moving to a dedicated setup script.
 createAdmin();
 
 let stripe: Stripe | null = null;
@@ -161,6 +172,7 @@ app.get("/api/debug/stripe", (req, res) => {
 
 // Auth Routes
 app.post("/api/auth/register", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     const { email, password, firstName, lastName } = req.body;
     
@@ -175,17 +187,22 @@ app.post("/api/auth/register", async (req, res) => {
     }
     
     // Check if user exists
-    const existingUser = await sql`SELECT * FROM users WHERE email = ${email}`;
-    if (existingUser.length > 0) {
+    const { data: existingUser } = await supabase.from('users').select('*').eq('email', email);
+    if (existingUser && existingUser.length > 0) {
       return res.status(400).json({ error: "Email already registered" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await sql`
-      INSERT INTO users (email, password, "firstName", "lastName") 
-      VALUES (${email}, ${hashedPassword}, ${firstName}, ${lastName})
-      RETURNING id, email, "firstName", "lastName", role
-    `;
+    const { data: result, error } = await supabase.from('users').insert([{ 
+      email, 
+      password: hashedPassword, 
+      firstName, 
+      lastName 
+    }]).select('id, email, firstName, lastName, role');
+
+    if (error || !result || result.length === 0) {
+      throw new Error(error?.message || "Failed to insert user");
+    }
 
     const user = result[0];
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
@@ -198,12 +215,18 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 app.post("/api/auth/login", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     const { email, password } = req.body;
-    const users = await sql`SELECT * FROM users WHERE email = ${email}`;
+    const { data: users, error } = await supabase.from('users').select('*').eq('email', email);
+    
+    if (error || !users || users.length === 0) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+    
     const user = users[0];
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
@@ -248,6 +271,7 @@ app.get("/api/auth/google/url", (req, res) => {
 });
 
 app.get("/api/auth/google/callback", async (req, res) => {
+  if (!supabase) return res.status(500).send("Database not configured");
   const { code, error: googleError, state } = req.query;
   if (googleError) {
     console.error(`[DAWL Auth] Google OAuth Error: ${googleError}`);
@@ -294,15 +318,18 @@ app.get("/api/auth/google/callback", async (req, res) => {
     const googleUser = await userResponse.json();
 
     // 3. Find or create user in DB
-    let users = await sql`SELECT * FROM users WHERE email = ${googleUser.email}`;
-    let user = users[0];
+    const { data: users } = await supabase.from('users').select('*').eq('email', googleUser.email);
+    let user = users && users.length > 0 ? users[0] : null;
     
     if (!user) {
-      const result = await sql`
-        INSERT INTO users (email, "firstName", "lastName", role) 
-        VALUES (${googleUser.email}, ${googleUser.given_name || "Google"}, ${googleUser.family_name || "User"}, 'user')
-        RETURNING *
-      `;
+      const { data: result, error } = await supabase.from('users').insert([{
+        email: googleUser.email,
+        firstName: googleUser.given_name || "Google",
+        lastName: googleUser.family_name || "User",
+        role: 'user'
+      }]).select('*');
+      
+      if (error || !result || result.length === 0) throw new Error("Failed to create user");
       user = result[0];
     }
 
@@ -337,6 +364,7 @@ app.get("/api/auth/google/callback", async (req, res) => {
 });
 
 app.get("/api/admin/users", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
@@ -344,13 +372,15 @@ app.get("/api/admin/users", async (req, res) => {
     const token = authHeader.split(" ")[1];
     const decoded: any = jwt.verify(token, JWT_SECRET);
     
-    const admins = await sql`SELECT * FROM users WHERE id = ${decoded.id}`;
-    const admin = admins[0];
+    const { data: admins } = await supabase.from('users').select('*').eq('id', decoded.id);
+    const admin = admins && admins.length > 0 ? admins[0] : null;
     if (!admin || admin.role !== 'admin') {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    const users = await sql`SELECT id, email, "firstName", "lastName", role, "createdAt" FROM users ORDER BY "createdAt" DESC`;
+    const { data: users, error } = await supabase.from('users').select('id, email, firstName, lastName, role, createdAt').order('createdAt', { ascending: false });
+    if (error) throw error;
+    
     res.json(users);
   } catch (error) {
     res.status(401).json({ error: "Invalid token" });
@@ -361,14 +391,15 @@ app.get("/api/admin/users", async (req, res) => {
 
 // 3. Admin: Simulate Shipping (WMS -> Carrier API)
 app.post("/api/admin/orders/:id/ship", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
     const token = authHeader.split(" ")[1];
     const decoded: any = jwt.verify(token, JWT_SECRET);
     
-    const admins = await sql`SELECT * FROM users WHERE id = ${decoded.id}`;
-    const admin = admins[0];
+    const { data: admins } = await supabase.from('users').select('*').eq('id', decoded.id);
+    const admin = admins && admins.length > 0 ? admins[0] : null;
     if (!admin || admin.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
 
     const orderId = req.params.id;
@@ -378,14 +409,18 @@ app.post("/api/admin/orders/:id/ship", async (req, res) => {
     // Simulate Carrier API Call
     console.log(`[DAWL CARRIER] Requesting tracking for ${orderId} from ${carrier}...`);
 
-    await sql`
-      UPDATE orders SET status = 'shipped', carrier = ${carrier}, "trackingNumber" = ${trackingNumber} WHERE id = ${orderId}
-    `;
+    await supabase.from('orders').update({ 
+      status: 'shipped', 
+      carrier, 
+      trackingNumber 
+    }).eq('id', orderId);
 
-    await sql`
-      INSERT INTO order_updates ("orderId", status, location, description) 
-      VALUES (${orderId}, 'shipped', 'Distribution Center', ${`Package picked up by ${carrier}. Tracking: ${trackingNumber}`})
-    `;
+    await supabase.from('order_updates').insert([{
+      orderId,
+      status: 'shipped',
+      location: 'Distribution Center',
+      description: `Package picked up by ${carrier}. Tracking: ${trackingNumber}`
+    }]);
 
     res.json({ success: true, trackingNumber });
   } catch (error: any) {
@@ -395,17 +430,18 @@ app.post("/api/admin/orders/:id/ship", async (req, res) => {
 
 // 4. Shipping Webhook (Simulated Carrier Updates)
 app.post("/api/webhooks/shipping", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   const { orderId, status, location, description } = req.body;
   
   try {
-    await sql`
-      UPDATE orders SET status = ${status} WHERE id = ${orderId}
-    `;
+    await supabase.from('orders').update({ status }).eq('id', orderId);
 
-    await sql`
-      INSERT INTO order_updates ("orderId", status, location, description) 
-      VALUES (${orderId}, ${status}, ${location}, ${description})
-    `;
+    await supabase.from('order_updates').insert([{
+      orderId,
+      status,
+      location,
+      description
+    }]);
 
     console.log(`[DAWL WEBHOOK] Shipping update for ${orderId}: ${status} at ${location}`);
     res.json({ received: true });
@@ -416,13 +452,14 @@ app.post("/api/webhooks/shipping", async (req, res) => {
 
 // 5. Get Order Status (Branded Tracking Page API)
 app.get("/api/orders/:id", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
-    const orders = await sql`SELECT * FROM orders WHERE id = ${req.params.id}`;
-    const order = orders[0];
+    const { data: orders } = await supabase.from('orders').select('*').eq('id', req.params.id);
+    const order = orders && orders.length > 0 ? orders[0] : null;
     if (!order) return res.status(404).json({ error: "Order not found" });
 
-    const updates = await sql`SELECT * FROM order_updates WHERE "orderId" = ${req.params.id} ORDER BY timestamp DESC`;
-    res.json({ ...order, updates });
+    const { data: updates } = await supabase.from('order_updates').select('*').eq('orderId', req.params.id).order('timestamp', { ascending: false });
+    res.json({ ...order, updates: updates || [] });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -430,14 +467,17 @@ app.get("/api/orders/:id", async (req, res) => {
 
 // 5.1 Get User Orders
 app.get("/api/user/orders", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
     const token = authHeader.split(" ")[1];
     const decoded: any = jwt.verify(token, JWT_SECRET);
 
-    const orders = await sql`SELECT * FROM orders WHERE "userId" = ${decoded.id} ORDER BY "createdAt" DESC`;
-    res.json(orders);
+    const { data: orders, error } = await supabase.from('orders').select('*').eq('userId', decoded.id).order('createdAt', { ascending: false });
+    if (error) throw error;
+    
+    res.json(orders || []);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -445,29 +485,33 @@ app.get("/api/user/orders", async (req, res) => {
 
 // 6. Admin: Get All Orders
 app.get("/api/admin/orders", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
     const token = authHeader.split(" ")[1];
     const decoded: any = jwt.verify(token, JWT_SECRET);
     
-    const admins = await sql`SELECT * FROM users WHERE id = ${decoded.id}`;
-    const admin = admins[0];
+    const { data: admins } = await supabase.from('users').select('*').eq('id', decoded.id);
+    const admin = admins && admins.length > 0 ? admins[0] : null;
     if (!admin || admin.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
 
-    const orders = await sql`
-      SELECT o.*, u.email as "userEmail" 
-      FROM orders o 
-      JOIN users u ON o."userId" = u.id 
-      ORDER BY o."createdAt" DESC
-    `;
-    res.json(orders);
+    const { data: orders, error } = await supabase.from('orders').select('*, users(email)').order('createdAt', { ascending: false });
+    if (error) throw error;
+    
+    const formattedOrders = (orders || []).map((o: any) => ({
+      ...o,
+      userEmail: o.users?.email
+    }));
+    
+    res.json(formattedOrders);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post("/api/create-payment-intent", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
@@ -504,16 +548,22 @@ app.post("/api/create-payment-intent", async (req, res) => {
 
     // 1. Create a 'pending' order first
     const orderId = `DWL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    await sql`
-      INSERT INTO orders (id, "userId", total, items, "shippingAddress", status) 
-      VALUES (${orderId}, ${decoded.id}, ${amount / 100}, ${JSON.stringify(items)}, ${JSON.stringify(shippingAddress)}, 'pending')
-    `;
+    await supabase.from('orders').insert([{
+      id: orderId,
+      userId: decoded.id,
+      total: amount / 100,
+      items,
+      shippingAddress,
+      status: 'pending'
+    }]);
 
     // 2. Add initial update
-    await sql`
-      INSERT INTO order_updates ("orderId", status, location, description) 
-      VALUES (${orderId}, 'pending', 'Warehouse', 'Order received and awaiting payment confirmation.')
-    `;
+    await supabase.from('order_updates').insert([{
+      orderId,
+      status: 'pending',
+      location: 'Warehouse',
+      description: 'Order received and awaiting payment confirmation.'
+    }]);
 
     // 3. Create Payment Intent with orderId in metadata
     const paymentIntent = await stripeClient.paymentIntents.create({
@@ -562,15 +612,17 @@ app.post("/api/webhook", express.raw({ type: "application/json" }), async (req, 
       
       // Fulfill the order in the database
       const orderIdFromMetadata = paymentIntent.metadata.order_id;
-      if (orderIdFromMetadata) {
-        const orders = await sql`SELECT * FROM orders WHERE id = ${orderIdFromMetadata}`;
-        const order = orders[0];
+      if (orderIdFromMetadata && supabase) {
+        const { data: orders } = await supabase.from('orders').select('*').eq('id', orderIdFromMetadata);
+        const order = orders && orders.length > 0 ? orders[0] : null;
         if (order) {
-          await sql`UPDATE orders SET status = 'paid' WHERE id = ${orderIdFromMetadata}`;
-          await sql`
-            INSERT INTO order_updates ("orderId", status, location, description) 
-            VALUES (${orderIdFromMetadata}, 'paid', 'System', 'Payment confirmed via Stripe. Order is now being processed.')
-          `;
+          await supabase.from('orders').update({ status: 'paid' }).eq('id', orderIdFromMetadata);
+          await supabase.from('order_updates').insert([{
+            orderId: orderIdFromMetadata,
+            status: 'paid',
+            location: 'System',
+            description: 'Payment confirmed via Stripe. Order is now being processed.'
+          }]);
           console.log(`[DAWL] Order ${orderIdFromMetadata} marked as paid via webhook.`);
         } else {
           console.error(`[DAWL] Webhook Error: Order ${orderIdFromMetadata} not found in database.`);
@@ -619,6 +671,8 @@ async function startServer() {
   }
 }
 
-startServer();
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  startServer();
+}
 
 export default app;
