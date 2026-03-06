@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 
@@ -647,6 +646,7 @@ async function startServer() {
     // Vite middleware for development
     if (process.env.NODE_ENV !== "production") {
       console.log("[DAWL] Starting Vite server...");
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
