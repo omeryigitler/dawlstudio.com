@@ -39,7 +39,8 @@ export function SocialAuth() {
 
   const handleGoogleLogin = async () => {
     try {
-      const response = await fetch("/api/auth/google/url");
+      const origin = window.location.origin;
+      const response = await fetch(`/api/auth/google/url?origin=${encodeURIComponent(origin)}`);
       const { url, error } = await response.json();
       
       if (error) {
@@ -55,7 +56,7 @@ export function SocialAuth() {
   };
 
   const handleAppleLogin = () => {
-    showToast("Apple Login: Coming Soon! (Waiting for Developer Account)", "info");
+    showToast("Apple Login: Coming Soon!", "info");
   };
 
   return (

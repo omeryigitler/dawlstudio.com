@@ -12,7 +12,8 @@ const SCENTS = [
       "Base: Vetiver, Musk"
     ],
     spaces: "Living Room, Study, Bedroom",
-    description: "A grounding, warm scent evoking the quiet sanctuary of a Maltese palazzo at dusk. The rich, woody notes of cedar are softened by the golden warmth of amber."
+    description: "A grounding, warm scent evoking the quiet sanctuary of a Maltese palazzo at dusk. The rich, woody notes of cedar are softened by the golden warmth of amber.",
+    image: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=800&auto=format&fit=crop"
   },
   {
     id: "02",
@@ -24,7 +25,8 @@ const SCENTS = [
       "Base: Sandalwood, Myrrh"
     ],
     spaces: "Bathroom, Entryway, Studio",
-    description: "A mineral, airy scent capturing the essence of sun-baked limestone and ancient rituals. Crisp sea salt and bright lemon give way to the deep, resinous calm of frankincense."
+    description: "A mineral, airy scent capturing the essence of sun-baked limestone and ancient rituals. Crisp sea salt and bright lemon give way to the deep, resinous calm of frankincense.",
+    image: "https://images.unsplash.com/photo-1582805362221-0690f26208ac?q=80&w=800&auto=format&fit=crop"
   }
 ];
 
@@ -84,7 +86,7 @@ export function ScentLibrary() {
 
             <div className={`order-1 ${idx % 2 === 0 ? 'lg:order-2' : 'lg:order-1'} aspect-square bg-charcoal-light border border-gold/5 relative overflow-hidden flex items-center justify-center`}>
               <img 
-                src={`https://picsum.photos/seed/scent${scent.id}/800/800`} 
+                src={scent.image} 
                 alt={scent.name} 
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover opacity-40 hover:opacity-80 transition-opacity duration-1000"

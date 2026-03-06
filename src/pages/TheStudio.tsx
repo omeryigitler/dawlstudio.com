@@ -28,7 +28,7 @@ export function TheStudio() {
         >
           <div className="aspect-square bg-charcoal-light border border-gold/5 relative overflow-hidden">
             <img 
-              src="https://picsum.photos/seed/studio1/800/800" 
+              src="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?q=80&w=800&auto=format&fit=crop" 
               alt="Studio Sanctuary" 
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity duration-1000"
@@ -59,7 +59,7 @@ export function TheStudio() {
           </div>
           <div className="order-1 md:order-2 aspect-square bg-charcoal-light border border-gold/5 relative overflow-hidden">
             <img 
-              src="https://picsum.photos/seed/studio2/800/800" 
+              src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?q=80&w=800&auto=format&fit=crop" 
               alt="Studio Materiality" 
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity duration-1000"
