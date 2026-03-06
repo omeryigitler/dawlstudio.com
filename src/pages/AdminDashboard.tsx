@@ -34,6 +34,20 @@ export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<'users' | 'orders'>('users');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Pagination state
+  const [userPage, setUserPage] = useState(1);
+  const [orderPage, setOrderPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const paginatedUsers = users.slice((userPage - 1) * itemsPerPage, userPage * itemsPerPage);
+  const paginatedOrders = orders.slice((orderPage - 1) * itemsPerPage, orderPage * itemsPerPage);
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric'
+    });
+  };
 
   useEffect(() => {
     if (!user || user.role !== "admin") {
@@ -152,49 +166,78 @@ export function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gold/5">
-                  {users.map((u) => (
-                    <tr key={u.id} className="group hover:bg-gold/[0.02] transition-colors">
-                      <td className="py-6 px-4">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-gold/10 flex items-center justify-center text-gold font-display text-sm">
-                            {u.firstName[0]}{u.lastName[0]}
-                          </div>
-                          <div>
-                            <p className="text-sm tracking-widest uppercase text-offwhite font-medium">
-                              {u.firstName} {u.lastName}
-                            </p>
-                            <p className="text-[10px] tracking-widest uppercase text-limestone/40 mt-1">
-                              ID: #{u.id}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-6 px-4">
-                        <div className="flex items-center gap-2 text-limestone/80">
-                          <Mail size={12} className="text-gold/40" />
-                          <span className="text-xs tracking-widest">{u.email}</span>
-                        </div>
-                      </td>
-                      <td className="py-6 px-4">
-                        <div className="flex items-center gap-2">
-                          <Shield size={12} className={u.role === 'admin' ? 'text-gold' : 'text-limestone/40'} />
-                          <span className={`text-[10px] uppercase tracking-widest ${u.role === 'admin' ? 'text-gold' : 'text-limestone/60'}`}>
-                            {u.role}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-6 px-4">
-                        <div className="flex items-center gap-2 text-limestone/60">
-                          <Calendar size={12} className="text-gold/40" />
-                          <span className="text-[10px] tracking-widest uppercase">
-                            {new Date(u.createdAt).toLocaleDateString()}
-                          </span>
-                        </div>
+                  {paginatedUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-12 text-center text-limestone/40 text-xs tracking-widest uppercase">
+                        No members found.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    paginatedUsers.map((u) => (
+                      <tr key={u.id} className="group hover:bg-gold/[0.02] transition-colors">
+                        <td className="py-6 px-4">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-gold/10 flex items-center justify-center text-gold font-display text-sm">
+                              {u.firstName[0]}{u.lastName[0]}
+                            </div>
+                            <div>
+                              <p className="text-sm tracking-widest uppercase text-offwhite font-medium">
+                                {u.firstName} {u.lastName}
+                              </p>
+                              <p className="text-[10px] tracking-widest uppercase text-limestone/40 mt-1">
+                                ID: #{u.id}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-6 px-4">
+                          <div className="flex items-center gap-2 text-limestone/80">
+                            <Mail size={12} className="text-gold/40" />
+                            <span className="text-xs tracking-widest">{u.email}</span>
+                          </div>
+                        </td>
+                        <td className="py-6 px-4">
+                          <div className="flex items-center gap-2">
+                            <Shield size={12} className={u.role === 'admin' ? 'text-gold' : 'text-limestone/40'} />
+                            <span className={`text-[10px] uppercase tracking-widest ${u.role === 'admin' ? 'text-gold' : 'text-limestone/60'}`}>
+                              {u.role}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-6 px-4">
+                          <div className="flex items-center gap-2 text-limestone/60">
+                            <Calendar size={12} className="text-gold/40" />
+                            <span className="text-[10px] tracking-widest uppercase">
+                              {formatDate(u.createdAt)}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
+              {users.length > itemsPerPage && (
+                <div className="flex justify-between items-center mt-6 pt-6 border-t border-gold/10">
+                  <button 
+                    onClick={() => setUserPage(p => Math.max(1, p - 1))}
+                    disabled={userPage === 1}
+                    className="text-[10px] uppercase tracking-widest text-limestone/60 hover:text-gold disabled:opacity-30"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-[10px] uppercase tracking-widest text-limestone/40">
+                    Page {userPage} of {Math.ceil(users.length / itemsPerPage)}
+                  </span>
+                  <button 
+                    onClick={() => setUserPage(p => Math.min(Math.ceil(users.length / itemsPerPage), p + 1))}
+                    disabled={userPage === Math.ceil(users.length / itemsPerPage)}
+                    className="text-[10px] uppercase tracking-widest text-limestone/60 hover:text-gold disabled:opacity-30"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -209,31 +252,38 @@ export function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gold/5">
-                  {orders.map((o) => (
-                    <tr key={o.id} className="group hover:bg-gold/[0.02] transition-colors">
-                      <td className="py-6 px-4">
-                        <div className="flex items-center gap-3">
-                          <Box size={16} className="text-gold/40" />
-                          <span className="text-sm tracking-widest uppercase text-offwhite font-medium">{o.id}</span>
-                        </div>
+                  {paginatedOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-12 text-center text-limestone/40 text-xs tracking-widest uppercase">
+                        No orders found.
                       </td>
-                      <td className="py-6 px-4">
-                        <p className="text-xs tracking-widest text-limestone/80">{o.userEmail}</p>
-                      </td>
-                      <td className="py-6 px-4">
-                        <span className={`text-[10px] uppercase tracking-widest px-3 py-1 border rounded-full ${
-                          o.status === 'shipped' ? 'text-gold border-gold/20' : 
-                          o.status === 'delivered' ? 'text-emerald-400 border-emerald-400/20' : 
-                          'text-limestone/60 border-gold/10'
-                        }`}>
-                          {o.status}
-                        </span>
-                      </td>
-                      <td className="py-6 px-4">
-                        <span className="text-xs tracking-widest text-offwhite">€{o.total.toFixed(2)}</span>
-                      </td>
-                      <td className="py-6 px-4">
-                        <div className="flex items-center gap-4">
+                    </tr>
+                  ) : (
+                    paginatedOrders.map((o) => (
+                      <tr key={o.id} className="group hover:bg-gold/[0.02] transition-colors">
+                        <td className="py-6 px-4">
+                          <div className="flex items-center gap-3">
+                            <Box size={16} className="text-gold/40" />
+                            <span className="text-sm tracking-widest uppercase text-offwhite font-medium">{o.id}</span>
+                          </div>
+                        </td>
+                        <td className="py-6 px-4">
+                          <p className="text-xs tracking-widest text-limestone/80">{o.userEmail}</p>
+                        </td>
+                        <td className="py-6 px-4">
+                          <span className={`text-[10px] uppercase tracking-widest px-3 py-1 border rounded-full ${
+                            o.status === 'shipped' ? 'text-gold border-gold/20' : 
+                            o.status === 'delivered' ? 'text-emerald-400 border-emerald-400/20' : 
+                            'text-limestone/60 border-gold/10'
+                          }`}>
+                            {o.status}
+                          </span>
+                        </td>
+                        <td className="py-6 px-4">
+                          <span className="text-xs tracking-widest text-offwhite">€{o.total.toFixed(2)}</span>
+                        </td>
+                        <td className="py-6 px-4">
+                          <div className="flex items-center gap-4">
                           {o.status === 'pending' && (
                             <button 
                               onClick={() => handleShipOrder(o.id)}
@@ -253,9 +303,31 @@ export function AdminDashboard() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ))
+                )}
                 </tbody>
               </table>
+              {orders.length > itemsPerPage && (
+                <div className="flex justify-between items-center mt-6 pt-6 border-t border-gold/10">
+                  <button 
+                    onClick={() => setOrderPage(p => Math.max(1, p - 1))}
+                    disabled={orderPage === 1}
+                    className="text-[10px] uppercase tracking-widest text-limestone/60 hover:text-gold disabled:opacity-30"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-[10px] uppercase tracking-widest text-limestone/40">
+                    Page {orderPage} of {Math.ceil(orders.length / itemsPerPage)}
+                  </span>
+                  <button 
+                    onClick={() => setOrderPage(p => Math.min(Math.ceil(orders.length / itemsPerPage), p + 1))}
+                    disabled={orderPage === Math.ceil(orders.length / itemsPerPage)}
+                    className="text-[10px] uppercase tracking-widest text-limestone/60 hover:text-gold disabled:opacity-30"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </motion.div>

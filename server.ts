@@ -1,5 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
 
 // NOTE: For Stripe Webhooks in production, use: https://www.dawlstudio.com/api/webhook
 // For Preview/Dev environments, use: <Shared App URL>/api/webhook
@@ -19,6 +21,9 @@ console.log("[DAWL] server.ts execution started");
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET) {
+  console.warn("[DAWL] WARNING: JWT_SECRET is not set. Using a temporary secret for development. THIS IS INSECURE FOR PRODUCTION.");
+}
 const JWT_SECRET = process.env.JWT_SECRET || "dawl-secret-key-2026";
 
 // Initialize Database
@@ -123,6 +128,17 @@ async function startServer() {
   const PORT = 3000;
 
   // Middleware
+  app.use(cors({ origin: process.env.APP_URL || true, credentials: true }));
+  
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // limit each IP to 10 requests per windowMs
+    message: { error: "Too many login/register attempts from this IP, please try again after 15 minutes" }
+  });
+
+  app.use("/api/auth/login", authLimiter);
+  app.use("/api/auth/register", authLimiter);
+
   app.use((req, res, next) => {
     if (req.originalUrl === '/api/webhook') {
       next();
@@ -177,6 +193,16 @@ async function startServer() {
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { email, password, firstName, lastName } = req.body;
+      
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: "Valid email is required" });
+      }
+      if (!password || password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+      if (!firstName || !lastName) {
+        return res.status(400).json({ error: "First and last name are required" });
+      }
       
       // Check if user exists
       const existingUser = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
@@ -308,12 +334,12 @@ async function startServer() {
         <html>
           <body>
             <script>
+              const data = ${JSON.stringify({ token, user: userWithoutPassword })};
               if (window.opener) {
                 window.opener.postMessage({ 
                   type: 'OAUTH_AUTH_SUCCESS', 
-                  token: '${token}', 
-                  user: ${JSON.stringify(userWithoutPassword)} 
-                }, '*');
+                  ...data
+                }, '${process.env.APP_URL || 'https://www.dawlstudio.com'}');
                 window.close();
               } else {
                 window.location.href = '/';
@@ -424,7 +450,7 @@ async function startServer() {
       const token = authHeader.split(" ")[1];
       const decoded: any = jwt.verify(token, JWT_SECRET);
 
-      const orders = db.prepare("SELECT * FROM orders WHERE userId = ? ORDER BY createdAt DESC").all();
+      const orders = db.prepare("SELECT * FROM orders WHERE userId = ? ORDER BY createdAt DESC").all(decoded.id);
       res.json(orders);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
