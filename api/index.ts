@@ -139,7 +139,32 @@ app.get("/api/config", (req, res) => {
                  process.env.publishable_key || 
                  process.env.STRIPE_PUB_KEY ||
                  process.env.PUBLIC_KEY;
+  
+  console.log(`[DAWL] /api/config called. Publishable key present: ${!!pubKey}`);
   res.json({ publishableKey: pubKey });
+});
+
+app.get("/api/debug/env-keys", (req, res) => {
+  const keys = Object.keys(process.env);
+  res.json({ keys: keys.filter(k => !k.includes('SECRET') && !k.includes('KEY') && !k.includes('PASSWORD') && !k.includes('TOKEN')) });
+});
+
+// Another one that specifically looks for Stripe-like keys but masks values
+app.get("/api/debug/stripe-keys", (req, res) => {
+  const stripeKeys = Object.keys(process.env).filter(k => 
+    k.toLowerCase().includes('stripe') || 
+    k.toLowerCase().includes('publishable') || 
+    k.toLowerCase().includes('public')
+  );
+  
+  const results = stripeKeys.map(k => ({
+    key: k,
+    present: !!process.env[k],
+    length: process.env[k]?.length || 0,
+    prefix: process.env[k]?.substring(0, 7) + "..."
+  }));
+  
+  res.json({ results });
 });
 
 app.get("/api/debug/stripe", (req, res) => {

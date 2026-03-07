@@ -23,6 +23,8 @@ interface OrderData {
   carrier: string | null;
   trackingNumber: string | null;
   createdAt: string;
+  items?: any[];
+  shippingAddress?: any;
 }
 
 export function AdminDashboard() {
@@ -34,6 +36,7 @@ export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<'users' | 'orders'>('users');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   
   // Pagination state
   const [userPage, setUserPage] = useState(1);
@@ -260,50 +263,109 @@ export function AdminDashboard() {
                     </tr>
                   ) : (
                     paginatedOrders.map((o) => (
-                      <tr key={o.id} className="group hover:bg-gold/[0.02] transition-colors">
-                        <td className="py-6 px-4">
-                          <div className="flex items-center gap-3">
-                            <Box size={16} className="text-gold/40" />
-                            <span className="text-sm tracking-widest uppercase text-offwhite font-medium">{o.id}</span>
-                          </div>
-                        </td>
-                        <td className="py-6 px-4">
-                          <p className="text-xs tracking-widest text-limestone/80">{o.userEmail}</p>
-                        </td>
-                        <td className="py-6 px-4">
-                          <span className={`text-[10px] uppercase tracking-widest px-3 py-1 border rounded-full ${
-                            o.status === 'shipped' ? 'text-gold border-gold/20' : 
-                            o.status === 'delivered' ? 'text-emerald-400 border-emerald-400/20' : 
-                            'text-limestone/60 border-gold/10'
-                          }`}>
-                            {o.status}
-                          </span>
-                        </td>
-                        <td className="py-6 px-4">
-                          <span className="text-xs tracking-widest text-offwhite">€{o.total.toFixed(2)}</span>
-                        </td>
-                        <td className="py-6 px-4">
-                          <div className="flex items-center gap-4">
-                          {o.status === 'pending' && (
-                            <button 
-                              onClick={() => handleShipOrder(o.id)}
-                              className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gold hover:text-gold-light transition-colors"
-                            >
-                              <Truck size={14} />
-                              Ship
-                            </button>
-                          )}
-                          <Link 
-                            to={`/track/${o.id}`}
-                            className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-limestone/40 hover:text-gold transition-colors"
-                          >
-                            <ExternalLink size={14} />
-                            Track
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                      <React.Fragment key={o.id}>
+                        <tr 
+                          className={`group hover:bg-gold/[0.02] transition-colors cursor-pointer ${expandedOrder === o.id ? 'bg-gold/[0.03]' : ''}`}
+                          onClick={() => setExpandedOrder(expandedOrder === o.id ? null : o.id)}
+                        >
+                          <td className="py-6 px-4">
+                            <div className="flex items-center gap-3">
+                              <Box size={16} className={expandedOrder === o.id ? 'text-gold' : 'text-gold/40'} />
+                              <span className="text-sm tracking-widest uppercase text-offwhite font-medium">{o.id}</span>
+                            </div>
+                          </td>
+                          <td className="py-6 px-4">
+                            <p className="text-xs tracking-widest text-limestone/80">{o.userEmail}</p>
+                            <p className="text-[10px] tracking-widest text-limestone/40 mt-1">{formatDate(o.createdAt)}</p>
+                          </td>
+                          <td className="py-6 px-4">
+                            <span className={`text-[10px] uppercase tracking-widest px-3 py-1 border rounded-full ${
+                              o.status === 'shipped' ? 'text-gold border-gold/20' : 
+                              o.status === 'delivered' ? 'text-emerald-400 border-emerald-400/20' : 
+                              'text-limestone/60 border-gold/10'
+                            }`}>
+                              {o.status}
+                            </span>
+                          </td>
+                          <td className="py-6 px-4">
+                            <span className="text-xs tracking-widest text-offwhite font-medium">€{o.total.toFixed(2)}</span>
+                          </td>
+                          <td className="py-6 px-4">
+                            <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                              {o.status === 'pending' && (
+                                <button 
+                                  onClick={() => handleShipOrder(o.id)}
+                                  className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gold hover:text-gold-light transition-colors"
+                                >
+                                  <Truck size={14} />
+                                  Ship
+                                </button>
+                              )}
+                              <Link 
+                                to={`/track/${o.id}`}
+                                className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-limestone/40 hover:text-gold transition-colors"
+                              >
+                                <ExternalLink size={14} />
+                                Track
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                        {expandedOrder === o.id && (
+                          <tr className="bg-gold/[0.01] border-b border-gold/10">
+                            <td colSpan={5} className="p-8">
+                              <motion.div 
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="grid grid-cols-1 md:grid-cols-2 gap-12"
+                              >
+                                {/* Items Section */}
+                                <div>
+                                  <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Ordered Items</h4>
+                                  <div className="space-y-4">
+                                    {o.items?.map((item: any, idx: number) => (
+                                      <div key={idx} className="flex items-center justify-between border-b border-gold/5 pb-4">
+                                        <div className="flex items-center gap-4">
+                                          <div className="w-12 h-12 bg-gold/5 rounded overflow-hidden">
+                                            <img src={item.image} alt={item.name} className="w-full h-full object-cover opacity-80" />
+                                          </div>
+                                          <div>
+                                            <p className="text-xs tracking-widest uppercase text-offwhite">{item.name}</p>
+                                            <p className="text-[10px] tracking-widest text-limestone/40 mt-1">Qty: {item.quantity}</p>
+                                          </div>
+                                        </div>
+                                        <p className="text-xs tracking-widest text-limestone/80">€{(item.price * item.quantity).toFixed(2)}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Shipping Section */}
+                                <div>
+                                  <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Shipping Sanctuary</h4>
+                                  <div className="bg-black/20 p-6 border border-gold/5 rounded-sm">
+                                    <p className="text-xs tracking-widest uppercase text-offwhite mb-2">
+                                      {o.shippingAddress?.firstName} {o.shippingAddress?.lastName}
+                                    </p>
+                                    <p className="text-[10px] tracking-widest text-limestone/60 leading-relaxed">
+                                      {o.shippingAddress?.address}<br />
+                                      {o.shippingAddress?.city}, {o.shippingAddress?.zipCode}<br />
+                                      {o.shippingAddress?.country}
+                                    </p>
+                                    {o.trackingNumber && (
+                                      <div className="mt-6 pt-6 border-t border-gold/10">
+                                        <p className="text-[10px] uppercase tracking-widest text-gold mb-1">Tracking Info</p>
+                                        <p className="text-xs tracking-widest text-limestone/80">{o.carrier}: {o.trackingNumber}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </motion.div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))
                 )}
                 </tbody>
               </table>

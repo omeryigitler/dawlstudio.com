@@ -19,10 +19,18 @@ const getStripePromise = async () => {
     try {
       const res = await fetch("/api/config");
       const { publishableKey } = await res.json();
-      if (publishableKey) {
-        stripePromise = loadStripe(publishableKey);
+      
+      // Fallback to checking window.env or similar if needed, 
+      // but /api/config is the source of truth for the server-provided key
+      const key = publishableKey || 
+                  (window as any).VITE_STRIPE_PUBLIC_KEY || 
+                  (window as any).STRIPE_PUBLISHABLE_KEY;
+
+      if (key) {
+        console.log("[DAWL] Initializing Stripe with key:", key.substring(0, 7) + "...");
+        stripePromise = loadStripe(key);
       } else {
-        console.error("[DAWL] Stripe publishable key not found in config");
+        console.error("[DAWL] Stripe publishable key not found in config or window");
       }
     } catch (err) {
       console.error("[DAWL] Failed to fetch Stripe config", err);
@@ -113,14 +121,37 @@ export function Checkout() {
   const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
-    getStripePromise().then(promise => {
-      if (promise) {
-        setStripeInstance(promise);
-      } else {
-        setInitError("Stripe keys are missing. Please add 'STRIPE_PUBLISHABLE_KEY' and 'STRIPE_SECRET_KEY' to your Secrets (🔒).");
+    const initStripe = async () => {
+      try {
+        const res = await fetch("/api/debug/stripe-keys");
+        const { results } = await res.json();
+        const foundKeys = results.filter((r: any) => r.present).map((r: any) => r.key);
+        
+        console.log("[DAWL] Found Stripe-related keys:", foundKeys);
+        
+        const promise = await getStripePromise();
+        if (promise) {
+          setStripeInstance(promise);
+        } else {
+          const keyMsg = foundKeys.length > 0 
+            ? `Found keys: ${foundKeys.join(", ")}, but none seem to be the correct Publishable Key.`
+            : "No Stripe-related keys found in environment.";
+          setInitError(`${keyMsg} Please ensure 'VITE_STRIPE_PUBLIC_KEY' and 'STRIPE_SECRET_KEY' are set in your Secrets (🔒).`);
+        }
+      } catch (err) {
+        console.error("[DAWL] Initialization error", err);
+        const promise = await getStripePromise();
+        if (promise) {
+          setStripeInstance(promise);
+        } else {
+          setInitError("Failed to initialize Stripe. Please check your configuration.");
+        }
+      } finally {
+        setIsInitializing(false);
       }
-      setIsInitializing(false);
-    });
+    };
+    
+    initStripe();
   }, []);
 
   const handleProceedToPayment = async () => {
