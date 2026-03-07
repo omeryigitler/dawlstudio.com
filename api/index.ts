@@ -92,12 +92,12 @@ if (fs.existsSync(priceMapPath)) {
 function getStripe() {
   if (!stripe) {
     const key = process.env.STRIPE_SECRET_KEY || 
-                process.env.secret_key || 
-                process.env.STRIPE_SEC_KEY ||
-                process.env.SECRET_KEY;
+                process.env.STRIPE_SECRET ||
+                process.env.SECRET_KEY ||
+                process.env.secret_key;
                 
     if (!key) {
-      console.warn("[DAWL] Stripe secret key is missing. Payment features will be disabled.");
+      console.error("[DAWL] CRITICAL: Stripe secret key is missing! Checked: STRIPE_SECRET_KEY, STRIPE_SECRET, SECRET_KEY.");
       return null;
     }
     stripe = new Stripe(key);
@@ -160,12 +160,12 @@ app.get("/health", (req, res) => {
 app.get("/api/config", (req, res) => {
   const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || 
                  process.env.STRIPE_PUBLISHABLE_KEY || 
+                 process.env.STRIPE_PUBLIC_KEY ||
                  process.env.publishable_key || 
-                 process.env.STRIPE_PUB_KEY ||
-                 process.env.PUBLIC_KEY;
+                 process.env.public_key;
   
-  console.log(`[DAWL] /api/config called. Publishable key present: ${!!pubKey}`);
-  res.json({ publishableKey: pubKey });
+  console.log(`[DAWL] /api/config called. Found key: ${pubKey ? 'YES (' + pubKey.substring(0, 7) + '...)' : 'NO'}`);
+  res.json({ publishableKey: pubKey || null });
 });
 
 app.get("/api/debug/env-keys", (req, res) => {
