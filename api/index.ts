@@ -107,13 +107,17 @@ function getStripe() {
 
 const app = express();
 
+// Trust proxy for express-rate-limit to work correctly behind nginx
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors({ origin: process.env.APP_URL || true, credentials: true }));
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // limit each IP to 10 requests per windowMs
-  message: { error: "Too many login/register attempts from this IP, please try again after 15 minutes" }
+  message: { error: "Too many login/register attempts from this IP, please try again after 15 minutes" },
+  validate: { xForwardedForHeader: false }, // Suppress validation errors as we've set trust proxy
 });
 
 app.use("/api/auth/login", authLimiter);
