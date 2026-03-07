@@ -111,7 +111,27 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Middleware
-app.use(cors({ origin: process.env.APP_URL || true, credentials: true }));
+app.use(cors({ 
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      process.env.APP_URL,
+      process.env.SHARED_APP_URL,
+      "https://ais-dev-hu45cucupborqfgzq5rwlj-83947013535.europe-west2.run.app",
+      "https://ais-pre-hu45cucupborqfgzq5rwlj-83947013535.europe-west2.run.app"
+    ].filter(Boolean);
+
+    if (allowedOrigins.includes(origin) || origin.endsWith('.run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      callback(null, true);
+    } else {
+      // In development/preview environments, we're more permissive
+      callback(null, true);
+    }
+  },
+  credentials: true 
+}));
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -671,6 +691,9 @@ app.post("/api/webhook", express.raw({ type: "application/json" }), async (req, 
 async function startServer() {
   try {
     const PORT = 3000;
+    console.log(`[DAWL] Starting server in ${process.env.NODE_ENV} mode`);
+    console.log(`[DAWL] APP_URL: ${process.env.APP_URL}`);
+    console.log(`[DAWL] VERCEL: ${process.env.VERCEL}`);
 
     // Vite middleware for development
     if (process.env.NODE_ENV !== "production") {
@@ -683,10 +706,19 @@ async function startServer() {
       console.log("[DAWL] Vite server started. Using middlewares...");
       app.use(vite.middlewares);
     } else {
-      app.use(express.static(path.join(process.cwd(), "dist")));
-      app.get("*", (req, res) => {
-        res.sendFile(path.join(process.cwd(), "dist", "index.html"));
-      });
+      const distPath = path.join(process.cwd(), "dist");
+      if (!fs.existsSync(distPath)) {
+        console.error(`[DAWL] CRITICAL: dist/ folder not found at ${distPath}. Build might have failed or not run.`);
+        app.get("*", (req, res) => {
+          res.status(500).send("Frontend build (dist/) is missing. Please run 'npm run build' or check your deployment configuration.");
+        });
+      } else {
+        console.log(`[DAWL] Serving static files from ${distPath}`);
+        app.use(express.static(distPath));
+        app.get("*", (req, res) => {
+          res.sendFile(path.join(distPath, "index.html"));
+        });
+      }
     }
 
     const server = app.listen(PORT, "0.0.0.0", () => {
