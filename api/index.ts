@@ -18,7 +18,16 @@ import jwt from "jsonwebtoken";
 
 console.log("[DAWL] api/index.ts execution started");
 
+// Load environment variables
 dotenv.config();
+
+// Debug: Log all keys starting with VITE_ or STRIPE_ at startup
+console.log("[DAWL] Environment Check at Startup:");
+Object.keys(process.env).forEach(key => {
+  if (key.startsWith("VITE_") || key.includes("STRIPE") || key.includes("KEY")) {
+    console.log(`[DAWL] Found Env Key: ${key} (Length: ${process.env[key]?.length || 0})`);
+  }
+});
 
 if (!process.env.JWT_SECRET) {
   console.warn("[DAWL] WARNING: JWT_SECRET is not set. Using a temporary secret for development. THIS IS INSECURE FOR PRODUCTION.");
@@ -111,6 +120,11 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Middleware
+app.use((req, res, next) => {
+  console.log(`[DAWL] Incoming Request: ${req.method} ${req.url}`);
+  next();
+});
+
 app.use(cors({ 
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -153,7 +167,12 @@ app.use((req, res, next) => {
 
 // Health check for platform
 app.get("/health", (req, res) => {
+  console.log("[DAWL] /health check received");
   res.status(200).send("OK");
+});
+
+app.get("/api/test", (req, res) => {
+  res.json({ message: "API is working", time: new Date().toISOString() });
 });
 
 // API Routes
@@ -169,8 +188,21 @@ app.get("/api/config", (req, res) => {
 });
 
 app.get("/api/debug/env-keys", (req, res) => {
-  const keys = Object.keys(process.env);
-  res.json({ keys: keys.filter(k => !k.includes('SECRET') && !k.includes('KEY') && !k.includes('PASSWORD') && !k.includes('TOKEN')) });
+  // Tüm anahtarları al ama değerleri gizle
+  const keys = Object.keys(process.env).map(k => {
+    const val = process.env[k];
+    return {
+      key: k,
+      present: !!val,
+      length: val ? val.length : 0,
+      prefix: val && val.length > 5 ? val.substring(0, 4) + "..." : "***"
+    };
+  });
+  res.json({ 
+    env: process.env.NODE_ENV,
+    totalKeys: keys.length,
+    keys: keys.sort((a, b) => a.key.localeCompare(b.key))
+  });
 });
 
 // Another one that specifically looks for Stripe-like keys but masks values
@@ -691,49 +723,64 @@ app.post("/api/webhook", express.raw({ type: "application/json" }), async (req, 
 async function startServer() {
   try {
     const PORT = 3000;
-    console.log(`[DAWL] Starting server in ${process.env.NODE_ENV} mode`);
+    const isProd = process.env.NODE_ENV === "production";
+    console.log(`[DAWL] Starting server in ${isProd ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
     console.log(`[DAWL] APP_URL: ${process.env.APP_URL}`);
-    console.log(`[DAWL] VERCEL: ${process.env.VERCEL}`);
+    console.log(`[DAWL] SHARED_APP_URL: ${process.env.SHARED_APP_URL}`);
 
     // Vite middleware for development
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[DAWL] Starting Vite server...");
+    if (!isProd) {
+      console.log("[DAWL] Starting Vite server as middleware...");
       const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
       });
-      console.log("[DAWL] Vite server started. Using middlewares...");
       app.use(vite.middlewares);
+      console.log("[DAWL] Vite middleware attached.");
     } else {
       const distPath = path.join(process.cwd(), "dist");
       if (!fs.existsSync(distPath)) {
-        console.error(`[DAWL] CRITICAL: dist/ folder not found at ${distPath}. Build might have failed or not run.`);
-        app.get("*", (req, res) => {
-          res.status(500).send("Frontend build (dist/) is missing. Please run 'npm run build' or check your deployment configuration.");
+        console.error(`[DAWL] CRITICAL: dist/ folder not found at ${distPath}.`);
+        // In production mode, if dist is missing, we still want the API to work
+        // but we'll show a helpful message for the frontend
+        app.get("/", (req, res) => {
+          res.status(500).send("Frontend build (dist/) is missing. Please run 'npm run build'.");
         });
       } else {
         console.log(`[DAWL] Serving static files from ${distPath}`);
         app.use(express.static(distPath));
-        app.get("*", (req, res) => {
+        // SPA fallback
+        app.get("*", (req, res, next) => {
+          if (req.url.startsWith('/api')) return next();
           res.sendFile(path.join(distPath, "index.html"));
         });
       }
     }
 
-    const server = app.listen(PORT, "0.0.0.0", () => {
-      console.log(`[DAWL] Server running on http://localhost:${PORT}`);
+    // Final 404 handler for API
+    app.use('/api/*', (req, res) => {
+      console.log(`[DAWL] 404 API Not Found: ${req.method} ${req.originalUrl}`);
+      res.status(404).json({ error: `API Route not found: ${req.originalUrl}` });
     });
-    server.on('error', (err) => {
-      console.error("[DAWL] Server error:", err);
+
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.log(`[DAWL] Server successfully started and listening on http://0.0.0.0:${PORT}`);
+    });
+    
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`[DAWL] Port ${PORT} is already in use. This might happen during a quick restart.`);
+      } else {
+        console.error("[DAWL] Server error:", err);
+      }
     });
   } catch (err) {
     console.error("[DAWL] Critical error starting server:", err);
   }
 }
 
-if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
-  startServer();
-}
+// Always start the server in this environment
+startServer();
 
 export default app;

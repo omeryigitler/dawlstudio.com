@@ -18,6 +18,11 @@ const getStripePromise = async () => {
   if (!stripePromise) {
     try {
       const res = await fetch("/api/config");
+      if (!res.ok) {
+        const text = await res.text();
+        console.error(`[DAWL] /api/config failed with status ${res.status}: ${text.substring(0, 100)}`);
+        throw new Error(`API error: ${res.status}`);
+      }
       const { publishableKey } = await res.json();
       
       // Fallback to checking window.env or similar if needed, 
