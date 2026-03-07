@@ -19,13 +19,20 @@ import jwt from "jsonwebtoken";
 console.log("[DAWL] api/index.ts execution started");
 
 // Load environment variables
-dotenv.config();
+const dotenvResult = dotenv.config();
+if (dotenvResult.error) {
+  console.warn("[DAWL] dotenv.config() error (this is normal if .env is missing):", dotenvResult.error.message);
+} else {
+  console.log("[DAWL] .env file loaded successfully.");
+}
 
 // Debug: Log all keys starting with VITE_ or STRIPE_ at startup
 console.log("[DAWL] Environment Check at Startup:");
 Object.keys(process.env).forEach(key => {
-  if (key.startsWith("VITE_") || key.includes("STRIPE") || key.includes("KEY")) {
-    console.log(`[DAWL] Found Env Key: ${key} (Length: ${process.env[key]?.length || 0})`);
+  const lowerKey = key.toLowerCase();
+  if (lowerKey.startsWith("vite_") || lowerKey.includes("stripe") || lowerKey.includes("key") || lowerKey.includes("secret")) {
+    const val = process.env[key];
+    console.log(`[DAWL] Found Env Key: ${key} (Length: ${val?.length || 0}, Prefix: ${val ? val.substring(0, 4) : 'N/A'})`);
   }
 });
 
@@ -103,10 +110,12 @@ function getStripe() {
     const key = process.env.STRIPE_SECRET_KEY || 
                 process.env.STRIPE_SECRET ||
                 process.env.SECRET_KEY ||
-                process.env.secret_key;
+                process.env.secret_key ||
+                process.env.STRIPE_SEC_KEY ||
+                process.env.STRIPE_API_KEY;
                 
     if (!key) {
-      console.error("[DAWL] CRITICAL: Stripe secret key is missing! Checked: STRIPE_SECRET_KEY, STRIPE_SECRET, SECRET_KEY.");
+      console.error("[DAWL] CRITICAL: Stripe secret key is missing! Checked: STRIPE_SECRET_KEY, STRIPE_SECRET, SECRET_KEY, etc.");
       return null;
     }
     stripe = new Stripe(key);
@@ -181,10 +190,21 @@ app.get("/api/config", (req, res) => {
                  process.env.STRIPE_PUBLISHABLE_KEY || 
                  process.env.STRIPE_PUBLIC_KEY ||
                  process.env.publishable_key || 
-                 process.env.public_key;
+                 process.env.public_key ||
+                 process.env.STRIPE_PUB_KEY ||
+                 process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
   
   console.log(`[DAWL] /api/config called. Found key: ${pubKey ? 'YES (' + pubKey.substring(0, 7) + '...)' : 'NO'}`);
-  res.json({ publishableKey: pubKey || null });
+  
+  // Debug için sunucudaki durumu da gönderelim (değerleri gizleyerek)
+  res.json({ 
+    publishableKey: pubKey || null,
+    debug: {
+      hasViteKey: !!process.env.VITE_STRIPE_PUBLIC_KEY,
+      hasStripeKey: !!process.env.STRIPE_PUBLISHABLE_KEY,
+      env: process.env.NODE_ENV
+    }
+  });
 });
 
 app.get("/api/debug/env-keys", (req, res) => {
