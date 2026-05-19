@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS public.order_updates (
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 4. Canonical Admin User
+UPDATE public.users SET role = 'user' WHERE lower(email) <> 'yigitleromer@gmail.com';
+UPDATE public.users SET role = 'admin' WHERE lower(email) = 'yigitleromer@gmail.com';
+
 -- Note: Enable Row Level Security (RLS) if you plan to query directly from the frontend.
 -- Since this app uses a Node.js backend with the Service Role Key, RLS is not strictly required for the backend to function,
 -- but it is highly recommended for security.

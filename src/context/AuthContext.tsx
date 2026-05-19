@@ -24,15 +24,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
+    let parsedUser: User | null = null;
+
     if (token && storedUser) {
       try {
-        setUser(JSON.parse(storedUser));
+        parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
       } catch (e) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
       }
     }
-    setIsLoading(false);
+
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
+    fetch("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Session refresh failed");
+        return response.json();
+      })
+      .then((data) => {
+        if (data.user) {
+          localStorage.setItem("user", JSON.stringify(data.user));
+          setUser(data.user);
+        }
+      })
+      .catch(() => {
+        if (!parsedUser) {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          setUser(null);
+        }
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   const login = (token: string, userData: User) => {

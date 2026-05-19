@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -9,13 +9,35 @@ export function SocialAuth() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const [isGoogleEnabled, setIsGoogleEnabled] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetch("/api/auth/google/status")
+      .then(async (response) => {
+        if (!response.ok) return { enabled: false };
+        return response.json();
+      })
+      .then((data) => {
+        if (isMounted) setIsGoogleEnabled(Boolean(data.enabled));
+      })
+      .catch(() => {
+        if (isMounted) setIsGoogleEnabled(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       // Validate origin - be more flexible for dev environments
       const origin = event.origin;
       const isValidOrigin = 
-        origin.endsWith('.run.app') || 
+        origin.endsWith('.run.app') ||
+        origin.endsWith('.vercel.app') ||
         origin.includes('localhost') || 
         origin.includes('127.0.0.1') ||
         origin.includes('dawlstudio.com');
@@ -55,9 +77,7 @@ export function SocialAuth() {
     }
   };
 
-  const handleAppleLogin = () => {
-    showToast("Apple Login: Coming Soon!", "info");
-  };
+  if (!isGoogleEnabled) return null;
 
   return (
     <div className="space-y-4 mt-8">
@@ -70,7 +90,7 @@ export function SocialAuth() {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <button
           onClick={handleGoogleLogin}
           className="flex items-center justify-center gap-3 py-4 border border-gold/20 hover:border-gold/40 hover:bg-gold/5 transition-all duration-500 group"
@@ -84,15 +104,6 @@ export function SocialAuth() {
           <span className="text-[10px] uppercase tracking-widest text-limestone group-hover:text-gold transition-colors">Google</span>
         </button>
 
-        <button
-          onClick={handleAppleLogin}
-          className="flex items-center justify-center gap-3 py-4 border border-gold/20 hover:border-gold/40 hover:bg-gold/5 transition-all duration-500 group"
-        >
-          <svg className="w-4 h-4 text-limestone group-hover:text-gold transition-colors" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.06.75 1.21-.02 2.1-.81 3.46-.74 1.63.08 2.83.68 3.51 1.66-3.32 2.02-2.77 6.43.43 7.74-.61 1.54-1.47 3.07-2.46 4.56zM12.03 7.25c-.02-2.23 1.83-4.14 3.98-4.25.22 2.42-2.23 4.49-3.98 4.25z"/>
-          </svg>
-          <span className="text-[10px] uppercase tracking-widest text-limestone group-hover:text-gold transition-colors">Apple</span>
-        </button>
       </div>
     </div>
   );
