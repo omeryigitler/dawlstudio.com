@@ -16,13 +16,20 @@ CREATE TABLE IF NOT EXISTS public.orders (
     id TEXT PRIMARY KEY,
     "userId" UUID REFERENCES public.users(id) ON DELETE CASCADE,
     total NUMERIC NOT NULL,
+    currency TEXT DEFAULT 'eur'::text,
     items JSONB NOT NULL,
     "shippingAddress" JSONB,
-    status TEXT DEFAULT 'pending'::text,
+    status TEXT DEFAULT 'pending_payment'::text,
+    "stripePaymentIntentId" TEXT,
+    "paidAt" TIMESTAMP WITH TIME ZONE,
     carrier TEXT,
     "trackingNumber" TEXT,
     "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'eur'::text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS "stripePaymentIntentId" TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS "paidAt" TIMESTAMP WITH TIME ZONE;
 
 -- 3. Create Order Updates Table
 CREATE TABLE IF NOT EXISTS public.order_updates (

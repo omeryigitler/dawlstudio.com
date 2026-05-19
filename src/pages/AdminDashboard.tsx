@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 import { Users, Calendar, Mail, Shield, Package, Truck, ExternalLink, Box } from "lucide-react";
+import { PRODUCTS } from "../constants/products";
 
 interface UserData {
   id: number;
@@ -50,6 +51,19 @@ export function AdminDashboard() {
     return new Date(dateString).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric'
     });
+  };
+
+  const getOrderItemDisplay = (item: any) => {
+    const product = PRODUCTS.find((p) => p.id === item.id);
+    const unitAmount = typeof item.unitAmount === "number"
+      ? item.unitAmount / 100
+      : Number(item.price || 0);
+
+    return {
+      name: item.name || product?.name || item.id,
+      image: item.image || product?.image,
+      lineTotal: unitAmount * Number(item.quantity || 0),
+    };
   };
 
   useEffect(() => {
@@ -323,20 +337,28 @@ export function AdminDashboard() {
                                 <div>
                                   <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Ordered Items</h4>
                                   <div className="space-y-4">
-                                    {o.items?.map((item: any, idx: number) => (
-                                      <div key={idx} className="flex items-center justify-between border-b border-gold/5 pb-4">
-                                        <div className="flex items-center gap-4">
-                                          <div className="w-12 h-12 bg-gold/5 rounded overflow-hidden">
-                                            <img src={item.image} alt={item.name} className="w-full h-full object-cover opacity-80" />
+                                    {o.items?.map((item: any, idx: number) => {
+                                      const display = getOrderItemDisplay(item);
+
+                                      return (
+                                        <div key={idx} className="flex items-center justify-between border-b border-gold/5 pb-4">
+                                          <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-gold/5 rounded overflow-hidden flex items-center justify-center">
+                                              {display.image ? (
+                                                <img src={display.image} alt={display.name} className="w-full h-full object-cover opacity-80" />
+                                              ) : (
+                                                <Package size={16} className="text-gold/40" />
+                                              )}
+                                            </div>
+                                            <div>
+                                              <p className="text-xs tracking-widest uppercase text-offwhite">{display.name}</p>
+                                              <p className="text-[10px] tracking-widest text-limestone/40 mt-1">Qty: {item.quantity}</p>
+                                            </div>
                                           </div>
-                                          <div>
-                                            <p className="text-xs tracking-widest uppercase text-offwhite">{item.name}</p>
-                                            <p className="text-[10px] tracking-widest text-limestone/40 mt-1">Qty: {item.quantity}</p>
-                                          </div>
+                                          <p className="text-xs tracking-widest text-limestone/80">€{display.lineTotal.toFixed(2)}</p>
                                         </div>
-                                        <p className="text-xs tracking-widest text-limestone/80">€{(item.price * item.quantity).toFixed(2)}</p>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
 
@@ -345,11 +367,11 @@ export function AdminDashboard() {
                                   <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Shipping Sanctuary</h4>
                                   <div className="bg-black/20 p-6 border border-gold/5 rounded-sm">
                                     <p className="text-xs tracking-widest uppercase text-offwhite mb-2">
-                                      {o.shippingAddress?.firstName} {o.shippingAddress?.lastName}
+                                      {o.shippingAddress?.fullName || `${o.shippingAddress?.firstName || ''} ${o.shippingAddress?.lastName || ''}`.trim()}
                                     </p>
                                     <p className="text-[10px] tracking-widest text-limestone/60 leading-relaxed">
                                       {o.shippingAddress?.address}<br />
-                                      {o.shippingAddress?.city}, {o.shippingAddress?.zipCode}<br />
+                                      {o.shippingAddress?.city}{o.shippingAddress?.zipCode ? `, ${o.shippingAddress.zipCode}` : ''}<br />
                                       {o.shippingAddress?.country}
                                     </p>
                                     {o.trackingNumber && (

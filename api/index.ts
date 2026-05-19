@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request } from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
 
@@ -26,20 +26,32 @@ if (dotenvResult.error) {
   console.log("[DAWL] .env file loaded successfully.");
 }
 
-// Debug: Log all keys starting with VITE_ or STRIPE_ at startup
-console.log("[DAWL] Environment Check at Startup:");
-Object.keys(process.env).forEach(key => {
-  const lowerKey = key.toLowerCase();
-  if (lowerKey.startsWith("vite_") || lowerKey.includes("stripe") || lowerKey.includes("key") || lowerKey.includes("secret")) {
-    const val = process.env[key];
-    console.log(`[DAWL] Found Env Key: ${key} (Length: ${val?.length || 0}, Prefix: ${val ? val.substring(0, 4) : 'N/A'})`);
-  }
-});
-
 if (!process.env.JWT_SECRET) {
   console.warn("[DAWL] WARNING: JWT_SECRET is not set. Using a temporary secret for development. THIS IS INSECURE FOR PRODUCTION.");
 }
 const JWT_SECRET = process.env.JWT_SECRET || "dawl-secret-key-2026";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const IS_VERCEL = process.env.VERCEL === "1";
+const ALLOWED_ORIGINS = new Set(
+  [
+    process.env.APP_URL,
+    process.env.SHARED_APP_URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "",
+    "https://dawlstudio.com",
+    "https://www.dawlstudio.com",
+  ].filter(Boolean)
+);
+
+const PRODUCT_CATALOG: Record<string, { unitAmount: number; currency: "eur"; name: string }> = {
+  "DS-R-W-01-220": { unitAmount: 6500, currency: "eur", name: "Cedarwood — Amber / Retail White" },
+  "DS-R-B-01-220": { unitAmount: 6500, currency: "eur", name: "Cedarwood — Amber / Retail Black" },
+  "DS-R-W-02-220": { unitAmount: 6500, currency: "eur", name: "Limestone — Frankincense / Retail White" },
+  "DS-R-B-02-220": { unitAmount: 6500, currency: "eur", name: "Limestone — Frankincense / Retail Black" },
+  "DS-P-W-01-220": { unitAmount: 9500, currency: "eur", name: "Cedarwood — Amber / Premium White" },
+  "DS-P-B-01-220": { unitAmount: 9500, currency: "eur", name: "Cedarwood — Amber / Premium Black" },
+  "DS-P-W-02-220": { unitAmount: 9500, currency: "eur", name: "Limestone — Frankincense / Premium White" },
+  "DS-P-B-02-220": { unitAmount: 9500, currency: "eur", name: "Limestone — Frankincense / Premium Black" },
+};
 
 // Initialize Database (Supabase)
 let supabase: any;
@@ -60,8 +72,16 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
 
 const createAdmin = async () => {
   if (!supabase) return;
+  if (IS_PRODUCTION && process.env.CREATE_DEFAULT_ADMIN !== "true") return;
+
   try {
     const adminEmail = "admin@dawl.studio"; // Default admin email
+    const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || (IS_PRODUCTION ? "" : "admin123");
+    if (!adminPassword) {
+      console.warn("[DAWL] Default admin creation skipped: DEFAULT_ADMIN_PASSWORD is missing.");
+      return;
+    }
+
     const { data: existingAdmin, error: fetchError } = await supabase.from('users').select('*').eq('email', adminEmail);
     
     if (fetchError) {
@@ -70,7 +90,7 @@ const createAdmin = async () => {
     }
 
     if (!existingAdmin || existingAdmin.length === 0) {
-      const hashedPassword = await bcrypt.hash("admin123", 10);
+      const hashedPassword = await bcrypt.hash(adminPassword, 10);
       const { error: insertError } = await supabase.from('users').insert([{
         email: adminEmail,
         password: hashedPassword,
@@ -82,7 +102,7 @@ const createAdmin = async () => {
       if (insertError) {
          console.error("[DAWL] Error creating admin:", insertError);
       } else {
-         console.log("[DAWL] Default admin created: admin@dawl.studio / admin123");
+         console.log("[DAWL] Default admin created: admin@dawl.studio");
       }
     }
   } catch (err) {
@@ -138,19 +158,14 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      process.env.APP_URL,
-      process.env.SHARED_APP_URL,
-      "https://ais-dev-hu45cucupborqfgzq5rwlj-83947013535.europe-west2.run.app",
-      "https://ais-pre-hu45cucupborqfgzq5rwlj-83947013535.europe-west2.run.app"
-    ].filter(Boolean);
 
-    if (allowedOrigins.includes(origin) || origin.endsWith('.run.app') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1");
+    const isPreview = origin.endsWith(".vercel.app") || origin.endsWith(".run.app");
+
+    if (ALLOWED_ORIGINS.has(origin) || (!IS_PRODUCTION && (isLocal || isPreview))) {
       callback(null, true);
     } else {
-      // In development/preview environments, we're more permissive
-      callback(null, true);
+      callback(new Error("Not allowed by CORS"));
     }
   },
   credentials: true 
@@ -194,79 +209,8 @@ app.get("/api/config", (req, res) => {
                  process.env.STRIPE_PUB_KEY ||
                  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
   
-  console.log(`[DAWL] /api/config called. Found key: ${pubKey ? 'YES (' + pubKey.substring(0, 7) + '...)' : 'NO'}`);
-  
-  // Debug için sunucudaki durumu da gönderelim (değerleri gizleyerek)
   res.json({ 
-    publishableKey: pubKey || null,
-    debug: {
-      hasViteKey: !!process.env.VITE_STRIPE_PUBLIC_KEY,
-      hasStripeKey: !!process.env.STRIPE_PUBLISHABLE_KEY,
-      env: process.env.NODE_ENV
-    }
-  });
-});
-
-app.get("/api/debug/env-keys", (req, res) => {
-  // Tüm anahtarları al ama değerleri gizle
-  const keys = Object.keys(process.env).map(k => {
-    const val = process.env[k];
-    return {
-      key: k,
-      present: !!val,
-      length: val ? val.length : 0,
-      prefix: val && val.length > 5 ? val.substring(0, 4) + "..." : "***"
-    };
-  });
-  res.json({ 
-    env: process.env.NODE_ENV,
-    totalKeys: keys.length,
-    keys: keys.sort((a, b) => a.key.localeCompare(b.key))
-  });
-});
-
-// Another one that specifically looks for Stripe-like keys but masks values
-app.get("/api/debug/stripe-keys", (req, res) => {
-  const stripeKeys = Object.keys(process.env).filter(k => 
-    k.toLowerCase().includes('stripe') || 
-    k.toLowerCase().includes('publishable') || 
-    k.toLowerCase().includes('public')
-  );
-  
-  const results = stripeKeys.map(k => ({
-    key: k,
-    present: !!process.env[k],
-    length: process.env[k]?.length || 0,
-    prefix: process.env[k]?.substring(0, 7) + "..."
-  }));
-  
-  res.json({ results });
-});
-
-app.get("/api/debug/stripe", (req, res) => {
-  const pubKey = process.env.VITE_STRIPE_PUBLIC_KEY || 
-                 process.env.STRIPE_PUBLISHABLE_KEY || 
-                 process.env.publishable_key || 
-                 process.env.STRIPE_PUB_KEY ||
-                 process.env.PUBLIC_KEY;
-                 
-  const secKey = process.env.STRIPE_SECRET_KEY || 
-                 process.env.secret_key || 
-                 process.env.STRIPE_SEC_KEY ||
-                 process.env.SECRET_KEY;
-                 
-  res.json({
-    publishableKeyPresent: !!pubKey,
-    publishableKeyPrefix: pubKey ? pubKey.substring(0, 7) : null,
-    secretKeyPresent: !!secKey,
-    secretKeyPrefix: secKey ? secKey.substring(0, 7) : null,
-    allEnvKeys: Object.keys(process.env).sort(),
-    stripeRelatedKeys: Object.keys(process.env).filter(k => 
-      k.toLowerCase().includes('stripe') || 
-      k.toLowerCase().includes('key') || 
-      k.toLowerCase().includes('secret') ||
-      k.toLowerCase().includes('pub')
-    )
+    publishableKey: pubKey || null
   });
 });
 
@@ -610,37 +554,102 @@ app.get("/api/admin/orders", async (req, res) => {
   }
 });
 
+function getCatalogItem(id: string) {
+  const mappedItem = priceMap?.items?.[id];
+  if (
+    mappedItem &&
+    Number.isInteger(mappedItem.unitAmount) &&
+    mappedItem.unitAmount > 0 &&
+    String(mappedItem.currency || "").toLowerCase() === "eur"
+  ) {
+    return {
+      unitAmount: mappedItem.unitAmount,
+      currency: "eur" as const,
+      name: mappedItem.name || PRODUCT_CATALOG[id]?.name || id,
+    };
+  }
+
+  return PRODUCT_CATALOG[id] || null;
+}
+
+function normalizeCheckoutItems(items: any[]) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Your cart is empty.");
+  }
+
+  if (items.length > 20) {
+    throw new Error("Too many cart items.");
+  }
+
+  return items.map((item) => {
+    const id = String(item?.id || "").trim();
+    const quantity = Number(item?.quantity);
+    const catalogItem = getCatalogItem(id);
+
+    if (!catalogItem) {
+      throw new Error(`Unknown product: ${id || "missing SKU"}`);
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+      throw new Error(`Invalid quantity for ${id}.`);
+    }
+
+    return {
+      id,
+      name: catalogItem.name,
+      unitAmount: catalogItem.unitAmount,
+      currency: catalogItem.currency,
+      quantity,
+      giftCard: item?.giftCard || null,
+    };
+  });
+}
+
+function validateShippingAddress(shippingAddress: any) {
+  const fullName = String(shippingAddress?.fullName || "").trim();
+  const address = String(shippingAddress?.address || "").trim();
+  const city = String(shippingAddress?.city || "").trim();
+  const country = String(shippingAddress?.country || "").trim();
+
+  if (!fullName || !address || !city || !country) {
+    throw new Error("Shipping details are incomplete.");
+  }
+
+  return {
+    fullName: fullName.slice(0, 120),
+    address: address.slice(0, 240),
+    city: city.slice(0, 120),
+    country: country.slice(0, 120),
+  };
+}
+
+async function getAuthenticatedUserId(req: Request) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) throw new Error("Unauthorized");
+
+  const token = authHeader.split(" ")[1];
+  if (!token) throw new Error("Unauthorized");
+
+  const decoded: any = jwt.verify(token, JWT_SECRET);
+  if (!decoded?.id) throw new Error("Unauthorized");
+
+  return decoded.id;
+}
+
 app.post("/api/create-payment-intent", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-    const token = authHeader.split(" ")[1];
-    const decoded: any = jwt.verify(token, JWT_SECRET);
-
-    const { items, shippingAddress, currency = "eur" } = req.body;
+    const userId = await getAuthenticatedUserId(req);
+    const { items, shippingAddress } = req.body;
     const stripeClient = getStripe();
 
     if (!stripeClient) {
       return res.status(500).json({ error: "Stripe is not configured on the server." });
     }
 
-    let amount = 0;
-
-    // SECURITY: Calculate total on server using the price map
-    if (priceMap && priceMap.items) {
-      for (const item of items) {
-        const mappedItem = priceMap.items[item.id];
-        if (mappedItem) {
-          amount += mappedItem.unitAmount * item.quantity;
-        } else {
-          console.warn(`[DAWL] SKU ${item.id} not found in price map.`);
-          amount += (item.price * 100) * item.quantity;
-        }
-      }
-    } else {
-      amount = items.reduce((acc: number, item: any) => acc + (item.price * 100 * item.quantity), 0);
-    }
+    const validatedShippingAddress = validateShippingAddress(shippingAddress);
+    const normalizedItems = normalizeCheckoutItems(items);
+    const amount = normalizedItems.reduce((acc, item) => acc + item.unitAmount * item.quantity, 0);
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "Invalid payment amount." });
@@ -648,40 +657,102 @@ app.post("/api/create-payment-intent", async (req, res) => {
 
     // 1. Create a 'pending' order first
     const orderId = `DWL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    await supabase.from('orders').insert([{
+    const { error: orderInsertError } = await supabase.from('orders').insert([{
       id: orderId,
-      userId: decoded.id,
+      userId,
       total: amount / 100,
-      items,
-      shippingAddress,
-      status: 'pending'
+      currency: 'eur',
+      items: normalizedItems,
+      shippingAddress: validatedShippingAddress,
+      status: 'pending_payment'
     }]);
+    if (orderInsertError) throw new Error(orderInsertError.message);
 
     // 2. Add initial update
-    await supabase.from('order_updates').insert([{
+    const { error: orderUpdateInsertError } = await supabase.from('order_updates').insert([{
       orderId,
-      status: 'pending',
+      status: 'pending_payment',
       location: 'Warehouse',
       description: 'Order received and awaiting payment confirmation.'
     }]);
+    if (orderUpdateInsertError) throw new Error(orderUpdateInsertError.message);
 
     // 3. Create Payment Intent with orderId in metadata
     const paymentIntent = await stripeClient.paymentIntents.create({
       amount: Math.round(amount),
-      currency,
+      currency: "eur",
       automatic_payment_methods: {
         enabled: true,
       },
       metadata: {
         integration_check: "accept_a_payment",
         order_id: orderId,
+        user_id: String(userId),
       },
     });
 
-    res.json({ clientSecret: paymentIntent.client_secret, orderId });
+    const { error: paymentIntentUpdateError } = await supabase.from('orders').update({
+      stripePaymentIntentId: paymentIntent.id,
+    }).eq('id', orderId);
+    if (paymentIntentUpdateError) {
+      console.warn("[DAWL] PaymentIntent ID could not be stored on order:", paymentIntentUpdateError.message);
+    }
+
+    res.json({ clientSecret: paymentIntent.client_secret, orderId, amount: amount / 100, currency: "eur" });
   } catch (error: any) {
     console.error("[DAWL] Stripe Error:", error.message);
-    res.status(500).json({ error: "An error occurred while processing your payment." });
+    const status = error.message === "Unauthorized" ? 401 : 400;
+    res.status(status).json({ error: error.message || "An error occurred while processing your payment." });
+  }
+});
+
+app.post("/api/orders/:id/sync-payment", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
+
+  try {
+    const userId = await getAuthenticatedUserId(req);
+    const orderId = req.params.id;
+    const paymentIntentId = String(req.body?.paymentIntentId || "").trim();
+    const stripeClient = getStripe();
+
+    if (!stripeClient) {
+      return res.status(500).json({ error: "Stripe is not configured on the server." });
+    }
+
+    if (!paymentIntentId.startsWith("pi_")) {
+      return res.status(400).json({ error: "Invalid payment intent." });
+    }
+
+    const { data: orders } = await supabase.from('orders').select('*').eq('id', orderId);
+    const order = orders && orders.length > 0 ? orders[0] : null;
+    if (!order || order.userId !== userId) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const paymentIntent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
+    if (paymentIntent.metadata?.order_id !== orderId) {
+      return res.status(400).json({ error: "Payment intent does not belong to this order." });
+    }
+
+    if (paymentIntent.status === "succeeded" && order.status !== "paid") {
+      await supabase.from('orders').update({
+        status: 'paid',
+        stripePaymentIntentId: paymentIntent.id,
+        paidAt: new Date().toISOString(),
+      }).eq('id', orderId);
+
+      await supabase.from('order_updates').insert([{
+        orderId,
+        status: 'paid',
+        location: 'System',
+        description: 'Payment confirmed via Stripe. Order is now being processed.'
+      }]);
+    }
+
+    res.json({ status: paymentIntent.status, orderId });
+  } catch (error: any) {
+    const status = error.message === "Unauthorized" ? 401 : 500;
+    res.status(status).json({ error: error.message || "Failed to sync payment status" });
   }
 });
 
@@ -716,13 +787,19 @@ app.post("/api/webhook", express.raw({ type: "application/json" }), async (req, 
         const { data: orders } = await supabase.from('orders').select('*').eq('id', orderIdFromMetadata);
         const order = orders && orders.length > 0 ? orders[0] : null;
         if (order) {
-          await supabase.from('orders').update({ status: 'paid' }).eq('id', orderIdFromMetadata);
-          await supabase.from('order_updates').insert([{
-            orderId: orderIdFromMetadata,
-            status: 'paid',
-            location: 'System',
-            description: 'Payment confirmed via Stripe. Order is now being processed.'
-          }]);
+          if (order.status !== 'paid') {
+            await supabase.from('orders').update({
+              status: 'paid',
+              stripePaymentIntentId: paymentIntent.id,
+              paidAt: new Date().toISOString(),
+            }).eq('id', orderIdFromMetadata);
+            await supabase.from('order_updates').insert([{
+              orderId: orderIdFromMetadata,
+              status: 'paid',
+              location: 'System',
+              description: 'Payment confirmed via Stripe. Order is now being processed.'
+            }]);
+          }
           console.log(`[DAWL] Order ${orderIdFromMetadata} marked as paid via webhook.`);
         } else {
           console.error(`[DAWL] Webhook Error: Order ${orderIdFromMetadata} not found in database.`);
@@ -730,7 +807,20 @@ app.post("/api/webhook", express.raw({ type: "application/json" }), async (req, 
       }
       break;
     case "payment_intent.payment_failed":
-      console.log(`[DAWL] Payment failed for ${event.data.object.id}`);
+      const failedPaymentIntent: any = event.data.object;
+      console.log(`[DAWL] Payment failed for ${failedPaymentIntent.id}`);
+      if (failedPaymentIntent.metadata?.order_id && supabase) {
+        await supabase.from('orders').update({
+          status: 'payment_failed',
+          stripePaymentIntentId: failedPaymentIntent.id,
+        }).eq('id', failedPaymentIntent.metadata.order_id);
+        await supabase.from('order_updates').insert([{
+          orderId: failedPaymentIntent.metadata.order_id,
+          status: 'payment_failed',
+          location: 'System',
+          description: 'Payment failed or was declined by Stripe.'
+        }]);
+      }
       break;
     default:
       console.log(`[DAWL] Unhandled event type ${event.type}`);
@@ -800,7 +890,8 @@ async function startServer() {
   }
 }
 
-// Always start the server in this environment
-startServer();
+if (!IS_VERCEL) {
+  startServer();
+}
 
 export default app;

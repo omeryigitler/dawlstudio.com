@@ -1,34 +1,44 @@
 {
   "items": {
-    "DWL-01-W": {
-      "unitAmount": 4500,
+    "DS-R-W-01-220": {
+      "unitAmount": 6500,
       "currency": "eur",
-      "name": "Scent 01 — White Edition"
+      "name": "Cedarwood — Amber / Retail White"
     },
-    "DWL-01-B": {
-      "unitAmount": 4500,
+    "DS-R-B-01-220": {
+      "unitAmount": 6500,
       "currency": "eur",
-      "name": "Scent 01 — Black Edition"
+      "name": "Cedarwood — Amber / Retail Black"
     },
-    "DWL-02-W": {
-      "unitAmount": 4500,
+    "DS-R-W-02-220": {
+      "unitAmount": 6500,
       "currency": "eur",
-      "name": "Scent 02 — White Edition"
+      "name": "Limestone — Frankincense / Retail White"
     },
-    "DWL-02-B": {
-      "unitAmount": 4500,
+    "DS-R-B-02-220": {
+      "unitAmount": 6500,
       "currency": "eur",
-      "name": "Scent 02 — Black Edition"
+      "name": "Limestone — Frankincense / Retail Black"
     },
-    "DWL-PREM-01": {
-      "unitAmount": 8500,
+    "DS-P-W-01-220": {
+      "unitAmount": 9500,
       "currency": "eur",
-      "name": "Premium Scent 01"
+      "name": "Cedarwood — Amber / Premium White"
     },
-    "DWL-PREM-02": {
-      "unitAmount": 8500,
+    "DS-P-B-01-220": {
+      "unitAmount": 9500,
       "currency": "eur",
-      "name": "Premium Scent 02"
+      "name": "Cedarwood — Amber / Premium Black"
+    },
+    "DS-P-W-02-220": {
+      "unitAmount": 9500,
+      "currency": "eur",
+      "name": "Limestone — Frankincense / Premium White"
+    },
+    "DS-P-B-02-220": {
+      "unitAmount": 9500,
+      "currency": "eur",
+      "name": "Limestone — Frankincense / Premium Black"
     }
   }
 }
