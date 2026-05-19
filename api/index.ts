@@ -22,7 +22,7 @@ import {
   getShipmentStatusLabel,
   getTrackingProviderType,
   isMaltaPostCarrier,
-} from "../src/utils/carriers";
+} from "../src/utils/carriers.ts";
 
 console.log("[DAWL] api/index.ts execution started");
 
