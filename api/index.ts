@@ -637,7 +637,7 @@ app.get("/api/user/orders", async (req, res) => {
     
     res.json(orders || []);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
