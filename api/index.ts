@@ -15,6 +15,14 @@ import fs from "fs";
 import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import {
+  getCarrierCustomerNote,
+  getCarrierDisplayName,
+  getCarrierTrackingUrl,
+  getShipmentStatusLabel,
+  getTrackingProviderType,
+  isMaltaPostCarrier,
+} from "../src/utils/carriers";
 
 console.log("[DAWL] api/index.ts execution started");
 
@@ -554,6 +562,339 @@ app.get("/api/admin/users", async (req, res) => {
 
 // --- ORDER & SHIPPING INFRASTRUCTURE ---
 
+function isMissingColumnError(error: any) {
+  return error?.code === "42703" || String(error?.message || "").toLowerCase().includes("column");
+}
+
+function sanitizeText(value: unknown, maxLength = 240) {
+  const text = String(value || "").trim();
+  return text ? text.slice(0, maxLength) : "";
+}
+
+function deriveOrderStatus(order: any) {
+  return order?.orderStatus || order?.status || "order_confirmed";
+}
+
+function deriveShipmentStatus(order: any) {
+  if (order?.shipmentStatus) return order.shipmentStatus;
+  if (["shipped", "in_transit", "out_for_delivery", "delivered", "delayed", "exception"].includes(order?.status)) {
+    return order.status;
+  }
+  if (order?.status === "paid") return "preparing_shipment";
+  return order?.status || "order_confirmed";
+}
+
+function deriveShippingCountry(order: any) {
+  return order?.shippingCountry || order?.shippingAddress?.country || null;
+}
+
+function defaultEstimatedDelivery(order: any) {
+  if (order?.estimatedDelivery) return order.estimatedDelivery;
+  if (isMaltaPostCarrier(order?.carrier)) return "2-3 business days";
+  return deriveShippingCountry(order)?.toLowerCase() === "malta" ? "2-3 business days" : "3-5 business days";
+}
+
+function normalizeTrackingEvent(update: any) {
+  const status = update.status || "order_confirmed";
+  return {
+    id: update.id,
+    status,
+    description: update.description || getShipmentStatusLabel(status),
+    location: update.location || null,
+    timestamp: update.timestamp || update.createdAt || new Date().toISOString(),
+  };
+}
+
+async function getOrderUpdates(orderId: string) {
+  const { data, error } = await supabase
+    .from("order_updates")
+    .select("*")
+    .eq("orderId", orderId)
+    .order("timestamp", { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+async function findOrderByTrackingQuery(query: string) {
+  const value = sanitizeText(query, 160);
+  if (!value) return null;
+
+  const candidates = [
+    { column: "id", value },
+    { column: "trackingNumber", value },
+    { column: "orderNumber", value },
+    { column: "id", value: value.toUpperCase() },
+    { column: "orderNumber", value: value.toUpperCase() },
+  ];
+
+  for (const candidate of candidates) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq(candidate.column, candidate.value)
+      .limit(1);
+
+    if (error) {
+      if (candidate.column === "orderNumber" && isMissingColumnError(error)) continue;
+      throw error;
+    }
+
+    if (data && data.length > 0) return data[0];
+  }
+
+  return null;
+}
+
+async function getLiveTrackingSnapshot(carrier: string | null, trackingNumber: string | null) {
+  const providerType = getTrackingProviderType(carrier);
+  if (providerType !== "api") {
+    return {
+      providerConnected: false,
+      providerType,
+      status: null,
+      events: [],
+      message: getCarrierCustomerNote(carrier),
+    };
+  }
+
+  const provider = sanitizeText(process.env.TRACKING_PROVIDER, 40);
+  const hasProviderCredentials = Boolean(
+    provider &&
+      (process.env.TRACKING_PROVIDER_API_KEY ||
+        process.env.EASYPOST_API_KEY ||
+        process.env.AFTERSHIP_API_KEY ||
+        process.env.TRACKINGMORE_API_KEY)
+  );
+
+  if (!hasProviderCredentials) {
+    return {
+      providerConnected: false,
+      providerType,
+      provider: provider || null,
+      status: null,
+      events: [],
+      message: "Live carrier tracking is ready, but no provider API credentials are connected yet.",
+    };
+  }
+
+  return {
+    providerConnected: true,
+    providerType,
+    provider,
+    status: "in_transit",
+    events: [
+      {
+        status: "in_transit",
+        description: `Mock ${provider} status for ${trackingNumber}. Replace this with the provider API response.`,
+        location: "Carrier Network",
+        timestamp: new Date().toISOString(),
+      },
+    ],
+    message: "Live tracking provider is connected. Replace the mock handler with the selected carrier API.",
+  };
+}
+
+function buildPublicTrackingPayload(order: any, updates: any[], liveTracking: any) {
+  const shipmentStatus = deriveShipmentStatus(order);
+  const trackingNumber = order?.trackingNumber || null;
+  const carrier = order?.carrier ? getCarrierDisplayName(order.carrier) : null;
+  const trackingUrl = order?.trackingUrl || getCarrierTrackingUrl(order?.carrier, trackingNumber);
+  const trackingEvents = updates.map(normalizeTrackingEvent);
+  const fallbackEvent = {
+    status: shipmentStatus,
+    description: getShipmentStatusLabel(shipmentStatus),
+    location: deriveShippingCountry(order) || "DAWL STUDIO",
+    timestamp: order?.updatedAt || order?.createdAt || new Date().toISOString(),
+  };
+  const events = trackingEvents.length > 0 ? trackingEvents : [fallbackEvent];
+
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber || order.id,
+    orderStatus: deriveOrderStatus(order),
+    shipmentStatus,
+    shipmentStatusLabel: getShipmentStatusLabel(shipmentStatus),
+    shippingCountry: deriveShippingCountry(order),
+    shippingMethod: order.shippingMethod || null,
+    carrier,
+    carrierKey: order.carrier || null,
+    trackingNumber,
+    trackingUrl,
+    trackingProviderType: getTrackingProviderType(order?.carrier),
+    estimatedDelivery: defaultEstimatedDelivery(order),
+    lastUpdated: order?.updatedAt || events[0]?.timestamp || order?.createdAt || null,
+    trackingEvents: events,
+    liveTracking,
+    customerNote: getCarrierCustomerNote(order?.carrier),
+  };
+}
+
+function buildTrackingDescription(carrier: string, trackingNumber: string, shipmentStatus: string, customDescription?: string) {
+  if (customDescription) return customDescription;
+
+  if (isMaltaPostCarrier(carrier)) {
+    return trackingNumber
+      ? `Your order has been handed to MaltaPost. Tracking number: ${trackingNumber}.`
+      : "Your order has been shipped with MaltaPost.";
+  }
+
+  return `${getShipmentStatusLabel(shipmentStatus)} with ${getCarrierDisplayName(carrier)}${trackingNumber ? ` (${trackingNumber})` : ""}.`;
+}
+
+async function updateOrderTrackingFields(orderId: string, fields: Record<string, any>) {
+  const { data, error } = await supabase.from("orders").update(fields).eq("id", orderId).select("*");
+  if (!error) return data && data.length > 0 ? data[0] : null;
+
+  if (!isMissingColumnError(error)) throw error;
+
+  const legacyFields: Record<string, any> = {
+    carrier: fields.carrier,
+    trackingNumber: fields.trackingNumber,
+  };
+
+  if (["shipped", "delivered"].includes(fields.shipmentStatus)) {
+    legacyFields.status = fields.shipmentStatus;
+  }
+
+  const legacyResult = await supabase.from("orders").update(legacyFields).eq("id", orderId).select("*");
+  if (legacyResult.error) throw legacyResult.error;
+  return legacyResult.data && legacyResult.data.length > 0 ? legacyResult.data[0] : null;
+}
+
+app.get("/api/track", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
+
+  try {
+    const query = sanitizeText(req.query.query, 160);
+    if (!query) return res.status(400).json({ error: "Order number or tracking number is required" });
+
+    const order = await findOrderByTrackingQuery(query);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    const updates = await getOrderUpdates(order.id);
+    const liveTracking = await getLiveTrackingSnapshot(order.carrier, order.trackingNumber);
+    res.json(buildPublicTrackingPayload(order, updates, liveTracking));
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || "Failed to load tracking data" });
+  }
+});
+
+app.post("/api/admin/orders/:id/tracking", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
+
+  try {
+    await requireAdminUser(req);
+
+    const orderId = sanitizeText(req.params.id, 120);
+    const { data: orders, error: orderError } = await supabase.from("orders").select("*").eq("id", orderId).limit(1);
+    if (orderError) throw orderError;
+
+    const order = orders && orders.length > 0 ? orders[0] : null;
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    const carrier = sanitizeText(req.body?.carrier, 80);
+    const trackingNumber = sanitizeText(req.body?.trackingNumber, 120);
+    const shipmentStatus = sanitizeText(req.body?.shipmentStatus, 40) || deriveShipmentStatus(order);
+    const eventDescription = sanitizeText(req.body?.eventDescription, 300);
+    const eventLocation = sanitizeText(req.body?.eventLocation, 120) || deriveShippingCountry(order) || "Malta";
+    const computedTrackingUrl = getCarrierTrackingUrl(carrier, trackingNumber);
+    const trackingUrl = sanitizeText(req.body?.trackingUrl, 500) || computedTrackingUrl;
+    const estimatedDelivery = sanitizeText(req.body?.estimatedDelivery, 120) || null;
+
+    if (!carrier) return res.status(400).json({ error: "Carrier is required" });
+
+    const nextOrderStatus = ["shipped", "in_transit", "out_for_delivery"].includes(shipmentStatus)
+      ? "fulfilled"
+      : shipmentStatus === "delivered"
+        ? "delivered"
+        : deriveOrderStatus(order);
+
+    const updatedOrder = await updateOrderTrackingFields(orderId, {
+      carrier,
+      trackingNumber: trackingNumber || null,
+      trackingUrl,
+      shipmentStatus,
+      estimatedDelivery,
+      orderStatus: nextOrderStatus,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await supabase.from("order_updates").insert([{
+      orderId,
+      status: shipmentStatus,
+      location: eventLocation,
+      description: buildTrackingDescription(carrier, trackingNumber, shipmentStatus, eventDescription),
+    }]);
+
+    const updates = await getOrderUpdates(orderId);
+    const liveTracking = await getLiveTrackingSnapshot(updatedOrder?.carrier || carrier, updatedOrder?.trackingNumber || trackingNumber);
+    res.json({
+      success: true,
+      order: buildPublicTrackingPayload(updatedOrder || { ...order, carrier, trackingNumber, trackingUrl, shipmentStatus, estimatedDelivery }, updates, liveTracking),
+    });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || "Failed to update tracking" });
+  }
+});
+
+app.post("/api/webhooks/tracking", async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: "Database not configured" });
+
+  const webhookSecret = process.env.TRACKING_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return res.status(501).json({ error: "Tracking webhook is not configured yet" });
+  }
+
+  const authorizationSecret = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const headerSecret = String(req.headers["x-tracking-webhook-secret"] || "");
+  if (authorizationSecret !== webhookSecret && headerSecret !== webhookSecret) {
+    return res.status(401).json({ error: "Invalid webhook secret" });
+  }
+
+  try {
+    const orderId = sanitizeText(req.body?.orderId, 120);
+    const trackingNumber = sanitizeText(req.body?.trackingNumber, 120);
+    const shipmentStatus = sanitizeText(req.body?.shipmentStatus || req.body?.status, 40);
+    const description = sanitizeText(req.body?.description, 300) || getShipmentStatusLabel(shipmentStatus);
+    const location = sanitizeText(req.body?.location, 120) || "Carrier Network";
+    const estimatedDelivery = sanitizeText(req.body?.estimatedDelivery, 120) || null;
+
+    if (!orderId && !trackingNumber) {
+      return res.status(400).json({ error: "orderId or trackingNumber is required" });
+    }
+    if (!shipmentStatus) {
+      return res.status(400).json({ error: "shipmentStatus is required" });
+    }
+
+    const order = orderId
+      ? await findOrderByTrackingQuery(orderId)
+      : await findOrderByTrackingQuery(trackingNumber);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    await updateOrderTrackingFields(order.id, {
+      carrier: order.carrier,
+      trackingNumber: order.trackingNumber || trackingNumber,
+      trackingUrl: order.trackingUrl || getCarrierTrackingUrl(order.carrier, order.trackingNumber || trackingNumber),
+      shipmentStatus,
+      estimatedDelivery: estimatedDelivery || order.estimatedDelivery || null,
+      orderStatus: shipmentStatus === "delivered" ? "delivered" : deriveOrderStatus(order),
+      updatedAt: new Date().toISOString(),
+    });
+
+    await supabase.from("order_updates").insert([{
+      orderId: order.id,
+      status: shipmentStatus,
+      location,
+      description,
+    }]);
+
+    res.json({ received: true });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || "Failed to process tracking webhook" });
+  }
+});
+
 // 3. Admin: Simulate Shipping (WMS -> Carrier API)
 app.post("/api/admin/orders/:id/ship", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
@@ -567,11 +908,14 @@ app.post("/api/admin/orders/:id/ship", async (req, res) => {
     // Simulate Carrier API Call
     console.log(`[DAWL CARRIER] Requesting tracking for ${orderId} from ${carrier}...`);
 
-    await supabase.from('orders').update({ 
-      status: 'shipped', 
+    await updateOrderTrackingFields(orderId, {
       carrier, 
-      trackingNumber 
-    }).eq('id', orderId);
+      trackingNumber,
+      trackingUrl: getCarrierTrackingUrl(carrier, trackingNumber),
+      shipmentStatus: 'shipped',
+      orderStatus: 'fulfilled',
+      updatedAt: new Date().toISOString(),
+    });
 
     await supabase.from('order_updates').insert([{
       orderId,
@@ -592,7 +936,19 @@ app.post("/api/webhooks/shipping", async (req, res) => {
   const { orderId, status, location, description } = req.body;
   
   try {
-    await supabase.from('orders').update({ status }).eq('id', orderId);
+    const { data: orders } = await supabase.from('orders').select('*').eq('id', orderId).limit(1);
+    const order = orders && orders.length > 0 ? orders[0] : null;
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    await updateOrderTrackingFields(orderId, {
+      carrier: order.carrier,
+      trackingNumber: order.trackingNumber,
+      trackingUrl: order.trackingUrl || getCarrierTrackingUrl(order.carrier, order.trackingNumber),
+      shipmentStatus: status,
+      estimatedDelivery: order.estimatedDelivery || null,
+      orderStatus: status === "delivered" ? "delivered" : deriveOrderStatus(order),
+      updatedAt: new Date().toISOString(),
+    });
 
     await supabase.from('order_updates').insert([{
       orderId,
@@ -616,8 +972,9 @@ app.get("/api/orders/:id", async (req, res) => {
     const order = orders && orders.length > 0 ? orders[0] : null;
     if (!order) return res.status(404).json({ error: "Order not found" });
 
-    const { data: updates } = await supabase.from('order_updates').select('*').eq('orderId', req.params.id).order('timestamp', { ascending: false });
-    res.json({ ...order, updates: updates || [] });
+    const updates = await getOrderUpdates(req.params.id);
+    const liveTracking = await getLiveTrackingSnapshot(order.carrier, order.trackingNumber);
+    res.json(buildPublicTrackingPayload(order, updates, liveTracking));
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }

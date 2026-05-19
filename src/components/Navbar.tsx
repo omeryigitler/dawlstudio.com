@@ -44,6 +44,7 @@ export function Navbar() {
         <div className="flex items-center gap-8">
           <div className="hidden md:flex gap-6 text-xs tracking-widest uppercase text-limestone">
             <Link to="/gifting" className="hover:text-gold transition-colors duration-500">Gifting</Link>
+            <Link to="/track" className="hover:text-gold transition-colors duration-500">Track</Link>
             <Link to="/contact" className="hover:text-gold transition-colors duration-500">Contact</Link>
           </div>
           <div className="flex items-center gap-6">
@@ -129,6 +130,7 @@ export function Navbar() {
               <Link to="/studio" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-gold transition-colors duration-500">Studio</Link>
               <Link to="/scents" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-gold transition-colors duration-500">Scents</Link>
               <Link to="/gifting" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-gold transition-colors duration-500">Gifting</Link>
+              <Link to="/track" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-gold transition-colors duration-500">Track</Link>
               <Link to="/contact" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-gold transition-colors duration-500">Contact</Link>
             </div>
 
