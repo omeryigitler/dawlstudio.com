@@ -57,6 +57,7 @@ export default function App() {
                   <Route path="login" element={<Login />} />
                   <Route path="register" element={<Register />} />
                   <Route path="admin" element={<AdminDashboard />} />
+                  <Route path="track" element={<OrderTracking />} />
                   <Route path="track/:id" element={<OrderTracking />} />
                   <Route path="orders" element={<MyOrders />} />
                 </Route>

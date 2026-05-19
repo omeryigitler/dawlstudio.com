@@ -36,6 +36,7 @@ export function Footer() {
           <h3 className="text-xs font-display tracking-[0.2em] text-limestone mb-6 uppercase">Support</h3>
           <ul className="space-y-4 text-sm text-stone/80">
             <li><Link to="/contact" className="hover:text-gold transition-colors">Contact Us</Link></li>
+            <li><Link to="/track" className="hover:text-gold transition-colors">Track Order</Link></li>
             <li><Link to="/support" className="hover:text-gold transition-colors">Shipping & Returns</Link></li>
             <li><Link to="/support" className="hover:text-gold transition-colors">Candle Care</Link></li>
             <li><Link to="/legal" className="hover:text-gold transition-colors">Privacy & Terms</Link></li>

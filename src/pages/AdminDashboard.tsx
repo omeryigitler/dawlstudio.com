@@ -3,8 +3,15 @@ import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
-import { Users, Calendar, Mail, Shield, Package, Truck, ExternalLink, Box } from "lucide-react";
+import { Users, Calendar, Mail, Shield, Package, Truck, ExternalLink, Box, Save, LinkIcon } from "lucide-react";
 import { PRODUCTS } from "../constants/products";
+import {
+  getCarrierTrackingUrl,
+  getShipmentStatusLabel,
+  getTrackingProviderType,
+  isMaltaPostCarrier,
+  SHIPMENT_STATUS_OPTIONS,
+} from "../utils/carriers";
 
 interface UserData {
   id: number;
@@ -17,15 +24,32 @@ interface UserData {
 
 interface OrderData {
   id: string;
+  orderNumber?: string | null;
   userId: number;
   userEmail: string;
   status: string;
   total: number;
   carrier: string | null;
   trackingNumber: string | null;
+  trackingUrl?: string | null;
+  orderStatus?: string | null;
+  shipmentStatus?: string | null;
+  estimatedDelivery?: string | null;
+  shippingCountry?: string | null;
+  shippingMethod?: string | null;
   createdAt: string;
   items?: any[];
   shippingAddress?: any;
+}
+
+interface TrackingDraft {
+  carrier: string;
+  trackingNumber: string;
+  trackingUrl: string;
+  shipmentStatus: string;
+  estimatedDelivery: string;
+  eventDescription: string;
+  eventLocation: string;
 }
 
 export function AdminDashboard() {
@@ -38,6 +62,8 @@ export function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [trackingDrafts, setTrackingDrafts] = useState<Record<string, TrackingDraft>>({});
+  const [savingTrackingOrderId, setSavingTrackingOrderId] = useState<string | null>(null);
   
   // Pagination state
   const [userPage, setUserPage] = useState(1);
@@ -64,6 +90,61 @@ export function AdminDashboard() {
       image: item.image || product?.image,
       lineTotal: unitAmount * Number(item.quantity || 0),
     };
+  };
+
+  const getDefaultShipmentStatus = (order: OrderData) => {
+    if (order.shipmentStatus) return order.shipmentStatus;
+    if (["shipped", "in_transit", "out_for_delivery", "delivered", "delayed", "exception"].includes(order.status)) return order.status;
+    return order.status === "paid" ? "preparing_shipment" : "order_confirmed";
+  };
+
+  const createTrackingDraft = (order: OrderData): TrackingDraft => {
+    const carrier = order.carrier || "";
+    const trackingNumber = order.trackingNumber || "";
+    const trackingUrl = order.trackingUrl || getCarrierTrackingUrl(carrier, trackingNumber) || "";
+
+    return {
+      carrier,
+      trackingNumber,
+      trackingUrl,
+      shipmentStatus: getDefaultShipmentStatus(order),
+      estimatedDelivery: order.estimatedDelivery || "",
+      eventDescription: "",
+      eventLocation: order.shippingCountry || order.shippingAddress?.country || "Malta",
+    };
+  };
+
+  const toggleExpandedOrder = (order: OrderData) => {
+    setExpandedOrder(expandedOrder === order.id ? null : order.id);
+    setTrackingDrafts((current) => ({
+      ...current,
+      [order.id]: current[order.id] || createTrackingDraft(order),
+    }));
+  };
+
+  const updateTrackingDraft = (orderId: string, patch: Partial<TrackingDraft>) => {
+    setTrackingDrafts((current) => {
+      const next = {
+        ...(current[orderId] || {}),
+        ...patch,
+      } as TrackingDraft;
+
+      if (patch.carrier !== undefined || patch.trackingNumber !== undefined) {
+        const url = getCarrierTrackingUrl(next.carrier, next.trackingNumber);
+        if (url) next.trackingUrl = url;
+      }
+
+      return { ...current, [orderId]: next };
+    });
+  };
+
+  const refreshOrders = async () => {
+    const token = localStorage.getItem("token");
+    const ordersRes = await fetch("/api/admin/orders", { headers: { Authorization: `Bearer ${token}` } });
+    if (!ordersRes.ok) throw new Error("Failed to refresh orders");
+    const ordersData = await ordersRes.json();
+    setOrders(ordersData);
+    return ordersData;
   };
 
   useEffect(() => {
@@ -104,13 +185,41 @@ export function AdminDashboard() {
       });
       if (!response.ok) throw new Error("Failed to ship order");
       
-      // Refresh orders
-      const ordersRes = await fetch("/api/admin/orders", { headers: { Authorization: `Bearer ${token}` } });
-      const ordersData = await ordersRes.json();
-      setOrders(ordersData);
+      await refreshOrders();
       showToast(`Order ${orderId} has been marked as shipped.`, "success");
     } catch (err: any) {
       showToast(err.message, "error");
+    }
+  };
+
+  const handleSaveTracking = async (order: OrderData) => {
+    const draft = trackingDrafts[order.id] || createTrackingDraft(order);
+    try {
+      setSavingTrackingOrderId(order.id);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`/api/admin/orders/${order.id}/tracking`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(draft),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to update tracking");
+
+      const refreshedOrders = await refreshOrders();
+      const refreshedOrder = refreshedOrders.find((item: OrderData) => item.id === order.id) || order;
+      setTrackingDrafts((current) => ({
+        ...current,
+        [order.id]: createTrackingDraft(refreshedOrder),
+      }));
+      showToast(`Tracking updated for ${order.id}.`, "success");
+    } catch (err: any) {
+      showToast(err.message, "error");
+    } finally {
+      setSavingTrackingOrderId(null);
     }
   };
 
@@ -280,7 +389,7 @@ export function AdminDashboard() {
                       <React.Fragment key={o.id}>
                         <tr 
                           className={`group hover:bg-gold/[0.02] transition-colors cursor-pointer ${expandedOrder === o.id ? 'bg-gold/[0.03]' : ''}`}
-                          onClick={() => setExpandedOrder(expandedOrder === o.id ? null : o.id)}
+                          onClick={() => toggleExpandedOrder(o)}
                         >
                           <td className="py-6 px-4">
                             <div className="flex items-center gap-3">
@@ -294,19 +403,22 @@ export function AdminDashboard() {
                           </td>
                           <td className="py-6 px-4">
                             <span className={`text-[10px] uppercase tracking-widest px-3 py-1 border rounded-full ${
-                              o.status === 'shipped' ? 'text-gold border-gold/20' : 
-                              o.status === 'delivered' ? 'text-emerald-400 border-emerald-400/20' : 
+                              getDefaultShipmentStatus(o) === 'shipped' ? 'text-gold border-gold/20' :
+                              getDefaultShipmentStatus(o) === 'delivered' ? 'text-emerald-400 border-emerald-400/20' :
                               'text-limestone/60 border-gold/10'
                             }`}>
-                              {o.status}
+                              {getShipmentStatusLabel(getDefaultShipmentStatus(o))}
                             </span>
+                            <p className="text-[10px] text-limestone/35 mt-2 uppercase">
+                              Order: {getShipmentStatusLabel(o.orderStatus || o.status)}
+                            </p>
                           </td>
                           <td className="py-6 px-4">
                             <span className="text-xs tracking-widest text-offwhite font-medium">€{o.total.toFixed(2)}</span>
                           </td>
                           <td className="py-6 px-4">
                             <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                              {o.status === 'pending' && (
+                              {(o.status === 'pending' || o.status === 'paid') && (
                                 <button 
                                   onClick={() => handleShipOrder(o.id)}
                                   className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gold hover:text-gold-light transition-colors"
@@ -363,9 +475,9 @@ export function AdminDashboard() {
                                 </div>
 
                                 {/* Shipping Section */}
-                                <div>
-                                  <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Shipping Sanctuary</h4>
-                                  <div className="bg-black/20 p-6 border border-gold/5 rounded-sm">
+                                <div onClick={(event) => event.stopPropagation()}>
+                                  <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Shipping & Tracking</h4>
+                                  <div className="bg-black/20 p-6 border border-gold/5 rounded-sm mb-6">
                                     <p className="text-xs tracking-widest uppercase text-offwhite mb-2">
                                       {o.shippingAddress?.fullName || `${o.shippingAddress?.firstName || ''} ${o.shippingAddress?.lastName || ''}`.trim()}
                                     </p>
@@ -374,13 +486,124 @@ export function AdminDashboard() {
                                       {o.shippingAddress?.city}{o.shippingAddress?.zipCode ? `, ${o.shippingAddress.zipCode}` : ''}<br />
                                       {o.shippingAddress?.country}
                                     </p>
-                                    {o.trackingNumber && (
-                                      <div className="mt-6 pt-6 border-t border-gold/10">
-                                        <p className="text-[10px] uppercase tracking-widest text-gold mb-1">Tracking Info</p>
-                                        <p className="text-xs tracking-widest text-limestone/80">{o.carrier}: {o.trackingNumber}</p>
-                                      </div>
-                                    )}
                                   </div>
+
+                                  {(() => {
+                                    const draft = trackingDrafts[o.id] || createTrackingDraft(o);
+                                    const providerType = getTrackingProviderType(draft.carrier);
+
+                                    return (
+                                      <div className="bg-charcoal border border-gold/10 p-5 space-y-5">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                          <label className="block">
+                                            <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Carrier</span>
+                                            <select
+                                              value={draft.carrier}
+                                              onChange={(event) => updateTrackingDraft(o.id, { carrier: event.target.value })}
+                                              className="w-full bg-black/30 border border-gold/10 px-3 py-3 text-xs text-offwhite outline-none focus:border-gold/40"
+                                            >
+                                              <option value="">Select carrier</option>
+                                              <option value="MaltaPost">MaltaPost</option>
+                                              <option value="DHL">DHL</option>
+                                              <option value="UPS">UPS</option>
+                                              <option value="FedEx">FedEx</option>
+                                              <option value="EasyPost">EasyPost</option>
+                                              <option value="AfterShip">AfterShip</option>
+                                              <option value="TrackingMore">TrackingMore</option>
+                                              <option value="Manual Carrier">Manual Carrier</option>
+                                            </select>
+                                          </label>
+
+                                          <label className="block">
+                                            <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Shipment Status</span>
+                                            <select
+                                              value={draft.shipmentStatus}
+                                              onChange={(event) => updateTrackingDraft(o.id, { shipmentStatus: event.target.value })}
+                                              className="w-full bg-black/30 border border-gold/10 px-3 py-3 text-xs text-offwhite outline-none focus:border-gold/40"
+                                            >
+                                              {SHIPMENT_STATUS_OPTIONS.map((status) => (
+                                                <option key={status.value} value={status.value}>{status.label}</option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                        </div>
+
+                                        <label className="block">
+                                          <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Tracking Number</span>
+                                          <input
+                                            value={draft.trackingNumber}
+                                            onChange={(event) => updateTrackingDraft(o.id, { trackingNumber: event.target.value })}
+                                            placeholder="RR123456789MT"
+                                            className="w-full bg-black/30 border border-gold/10 px-3 py-3 text-xs text-offwhite placeholder:text-limestone/30 outline-none focus:border-gold/40"
+                                          />
+                                        </label>
+
+                                        <label className="block">
+                                          <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Tracking URL</span>
+                                          <div className="flex items-center gap-2 bg-black/30 border border-gold/10 px-3 py-3">
+                                            <LinkIcon size={13} className="text-gold/50" />
+                                            <input
+                                              value={draft.trackingUrl}
+                                              onChange={(event) => updateTrackingDraft(o.id, { trackingUrl: event.target.value })}
+                                              placeholder="Auto-filled for MaltaPost, DHL, UPS and FedEx"
+                                              className="w-full bg-transparent text-xs text-offwhite placeholder:text-limestone/30 outline-none"
+                                            />
+                                          </div>
+                                        </label>
+
+                                        <label className="block">
+                                          <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Estimated Delivery</span>
+                                          <input
+                                            value={draft.estimatedDelivery}
+                                            onChange={(event) => updateTrackingDraft(o.id, { estimatedDelivery: event.target.value })}
+                                            placeholder={isMaltaPostCarrier(draft.carrier) ? "2-3 business days" : "3-5 business days"}
+                                            className="w-full bg-black/30 border border-gold/10 px-3 py-3 text-xs text-offwhite placeholder:text-limestone/30 outline-none focus:border-gold/40"
+                                          />
+                                        </label>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-4">
+                                          <label className="block">
+                                            <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Timeline Note</span>
+                                            <input
+                                              value={draft.eventDescription}
+                                              onChange={(event) => updateTrackingDraft(o.id, { eventDescription: event.target.value })}
+                                              placeholder={isMaltaPostCarrier(draft.carrier) ? "Your order has been handed to MaltaPost." : "Package picked up by carrier."}
+                                              className="w-full bg-black/30 border border-gold/10 px-3 py-3 text-xs text-offwhite placeholder:text-limestone/30 outline-none focus:border-gold/40"
+                                            />
+                                          </label>
+                                          <label className="block">
+                                            <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Location</span>
+                                            <input
+                                              value={draft.eventLocation}
+                                              onChange={(event) => updateTrackingDraft(o.id, { eventLocation: event.target.value })}
+                                              placeholder="Malta"
+                                              className="w-full bg-black/30 border border-gold/10 px-3 py-3 text-xs text-offwhite placeholder:text-limestone/30 outline-none focus:border-gold/40"
+                                            />
+                                          </label>
+                                        </div>
+
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+                                          <p className="text-[10px] uppercase tracking-widest text-limestone/45">
+                                            Mode: <span className="text-gold">{providerType.replace("_", " ")}</span>
+                                          </p>
+                                          <button
+                                            onClick={() => handleSaveTracking(o)}
+                                            disabled={savingTrackingOrderId === o.id}
+                                            className="inline-flex items-center justify-center gap-2 bg-gold text-charcoal px-5 py-3 text-[10px] uppercase tracking-widest font-bold hover:bg-gold-light transition-colors disabled:opacity-60"
+                                          >
+                                            {savingTrackingOrderId === o.id ? (
+                                              "Saving"
+                                            ) : (
+                                              <>
+                                                <Save size={13} />
+                                                Save Tracking
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </motion.div>
                             </td>
