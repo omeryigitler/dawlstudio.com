@@ -41,6 +41,14 @@ const ALLOWED_ORIGINS = new Set(
     "https://www.dawlstudio.com",
   ].filter(Boolean)
 );
+const DEFAULT_ADMIN_EMAIL = "yigitleromer@gmail.com";
+const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL)
+    .split(",")
+    .map((email) => normalizeEmail(email))
+    .filter(Boolean)
+);
+const PRIMARY_ADMIN_EMAIL = Array.from(ADMIN_EMAILS)[0] || DEFAULT_ADMIN_EMAIL;
 
 const PRODUCT_CATALOG: Record<string, { unitAmount: number; currency: "eur"; name: string }> = {
   "DS-R-W-01-220": { unitAmount: 6500, currency: "eur", name: "Cedarwood — Amber / Retail White" },
@@ -52,6 +60,110 @@ const PRODUCT_CATALOG: Record<string, { unitAmount: number; currency: "eur"; nam
   "DS-P-W-02-220": { unitAmount: 9500, currency: "eur", name: "Limestone — Frankincense / Premium White" },
   "DS-P-B-02-220": { unitAmount: 9500, currency: "eur", name: "Limestone — Frankincense / Premium Black" },
 };
+
+function normalizeEmail(email: unknown) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function roleForEmail(email: unknown) {
+  return ADMIN_EMAILS.has(normalizeEmail(email)) ? "admin" : "user";
+}
+
+function sanitizeUser(user: any) {
+  const { password: _, ...userWithoutPassword } = user;
+  return userWithoutPassword;
+}
+
+async function applyCanonicalRole(user: any) {
+  if (!user) return user;
+
+  const expectedRole = roleForEmail(user.email);
+  if (user.role === expectedRole) return user;
+
+  const { data, error } = await supabase
+    .from("users")
+    .update({ role: expectedRole })
+    .eq("id", user.id)
+    .select("*");
+
+  if (error) {
+    console.warn(`[DAWL Auth] Could not sync role for ${normalizeEmail(user.email)}:`, error.message);
+    return { ...user, role: expectedRole };
+  }
+
+  return data && data.length > 0 ? data[0] : { ...user, role: expectedRole };
+}
+
+function normalizeOrigin(origin: unknown) {
+  try {
+    const url = new URL(String(origin || ""));
+    return url.origin;
+  } catch {
+    return "";
+  }
+}
+
+function getAppOrigin() {
+  return normalizeOrigin(process.env.APP_URL) || "https://www.dawlstudio.com";
+}
+
+function getTrustedClientOrigin(origin: unknown) {
+  const normalizedOrigin = normalizeOrigin(origin);
+  const fallbackOrigin = getAppOrigin();
+  if (!normalizedOrigin) return fallbackOrigin;
+
+  try {
+    const { hostname } = new URL(normalizedOrigin);
+    const isDawlDomain = hostname === "dawlstudio.com" || hostname.endsWith(".dawlstudio.com");
+    const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+    const isPreview = hostname.endsWith(".vercel.app") || hostname.endsWith(".run.app");
+
+    if (ALLOWED_ORIGINS.has(normalizedOrigin) || isDawlDomain || (!IS_PRODUCTION && (isLocal || isPreview))) {
+      return normalizedOrigin;
+    }
+  } catch {
+    return fallbackOrigin;
+  }
+
+  return fallbackOrigin;
+}
+
+function getGoogleRedirectUri() {
+  return process.env.GOOGLE_REDIRECT_URI || `${getAppOrigin()}/api/auth/google/callback`;
+}
+
+function isGoogleAuthConfigured() {
+  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
+
+async function getAuthenticatedUser(req: Request) {
+  if (!supabase) throw Object.assign(new Error("Database not configured"), { statusCode: 500 });
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+
+  const token = authHeader.split(" ")[1];
+  if (!token) throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+
+  const decoded: any = jwt.verify(token, JWT_SECRET);
+  if (!decoded?.id) throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+
+  const { data: users, error } = await supabase.from("users").select("*").eq("id", decoded.id);
+  if (error || !users || users.length === 0) {
+    throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+  }
+
+  return applyCanonicalRole(users[0]);
+}
+
+async function requireAdminUser(req: Request) {
+  const user = await getAuthenticatedUser(req);
+  if (roleForEmail(user.email) !== "admin" || user.role !== "admin") {
+    throw Object.assign(new Error("Forbidden"), { statusCode: 403 });
+  }
+
+  return user;
+}
 
 // Initialize Database (Supabase)
 let supabase: any;
@@ -75,7 +187,7 @@ const createAdmin = async () => {
   if (IS_PRODUCTION && process.env.CREATE_DEFAULT_ADMIN !== "true") return;
 
   try {
-    const adminEmail = "admin@dawl.studio"; // Default admin email
+    const adminEmail = PRIMARY_ADMIN_EMAIL;
     const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || (IS_PRODUCTION ? "" : "admin123");
     if (!adminPassword) {
       console.warn("[DAWL] Default admin creation skipped: DEFAULT_ADMIN_PASSWORD is missing.");
@@ -102,7 +214,7 @@ const createAdmin = async () => {
       if (insertError) {
          console.error("[DAWL] Error creating admin:", insertError);
       } else {
-         console.log("[DAWL] Default admin created: admin@dawl.studio");
+         console.log(`[DAWL] Default admin created: ${adminEmail}`);
       }
     }
   } catch (err) {
@@ -218,7 +330,8 @@ app.get("/api/config", (req, res) => {
 app.post("/api/auth/register", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
-    const { email, password, firstName, lastName } = req.body;
+    const { password, firstName, lastName } = req.body;
+    const email = normalizeEmail(req.body?.email);
     
     if (!email || !email.includes('@')) {
       return res.status(400).json({ error: "Valid email is required" });
@@ -241,7 +354,8 @@ app.post("/api/auth/register", async (req, res) => {
       email, 
       password: hashedPassword, 
       firstName, 
-      lastName 
+      lastName,
+      role: roleForEmail(email)
     }]).select('id, email, firstName, lastName, role');
 
     if (error || !result || result.length === 0) {
@@ -261,21 +375,23 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
-    const { email, password } = req.body;
+    const email = normalizeEmail(req.body?.email);
+    const { password } = req.body;
     const { data: users, error } = await supabase.from('users').select('*').eq('email', email);
     
     if (error || !users || users.length === 0) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
     
-    const user = users[0];
+    let user = users[0];
 
-    if (!(await bcrypt.compare(password, user.password))) {
+    if (!user.password || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
+    user = await applyCanonicalRole(user);
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
-    const { password: _, ...userWithoutPassword } = user;
+    const userWithoutPassword = sanitizeUser(user);
 
     res.json({ token, user: userWithoutPassword });
   } catch (error: any) {
@@ -284,20 +400,30 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req);
+    res.json({ user: sanitizeUser(user) });
+  } catch (error: any) {
+    res.status(error.statusCode || 401).json({ error: error.message || "Unauthorized" });
+  }
+});
+
+app.get("/api/auth/google/status", (req, res) => {
+  res.json({ enabled: isGoogleAuthConfigured() });
+});
+
 // Google OAuth Routes
 app.get("/api/auth/google/url", (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientOrigin = req.query.origin as string || process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-  
-  let appUrl = clientOrigin;
-  if (appUrl.endsWith('/')) appUrl = appUrl.slice(0, -1);
-  
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${appUrl}/api/auth/google/callback`;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const clientOrigin = getTrustedClientOrigin(req.query.origin);
+  const redirectUri = getGoogleRedirectUri();
   
   console.log(`[DAWL Auth] Generating Google OAuth URL. ClientID: ${clientId ? 'Present' : 'MISSING'}, RedirectURI: ${redirectUri}`);
 
-  if (!clientId) {
-    return res.status(500).json({ error: "Google Client ID not configured in Secrets (🔒)" });
+  if (!clientId || !clientSecret) {
+    return res.status(503).json({ error: "Google sign-in is not configured yet." });
   }
 
   const params = new URLSearchParams({
@@ -324,12 +450,8 @@ app.get("/api/auth/google/callback", async (req, res) => {
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  
-  const clientOrigin = state as string || process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-  let appUrl = clientOrigin;
-  if (appUrl.endsWith('/')) appUrl = appUrl.slice(0, -1);
-  
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${appUrl}/api/auth/google/callback`;
+  const clientOrigin = getTrustedClientOrigin(state);
+  const redirectUri = getGoogleRedirectUri();
 
   console.log(`[DAWL Auth] Callback received. Code: ${code ? 'Present' : 'MISSING'}`);
 
@@ -353,33 +475,42 @@ app.get("/api/auth/google/callback", async (req, res) => {
     });
 
     const tokens = await tokenResponse.json();
-    if (!tokens.access_token) throw new Error("Failed to get access token");
+    if (!tokens.access_token) {
+      console.error("[DAWL Auth] Google token exchange failed:", tokens);
+      throw new Error("Failed to get access token");
+    }
 
     // 2. Get user info
     const userResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const googleUser = await userResponse.json();
+    const googleEmail = normalizeEmail(googleUser.email);
+    if (!googleEmail || googleUser.email_verified === false) {
+      throw new Error("Google account email is not verified.");
+    }
 
     // 3. Find or create user in DB
-    const { data: users } = await supabase.from('users').select('*').eq('email', googleUser.email);
+    const { data: users } = await supabase.from('users').select('*').eq('email', googleEmail);
     let user = users && users.length > 0 ? users[0] : null;
     
     if (!user) {
       const { data: result, error } = await supabase.from('users').insert([{
-        email: googleUser.email,
+        email: googleEmail,
         firstName: googleUser.given_name || "Google",
         lastName: googleUser.family_name || "User",
-        role: 'user'
+        role: roleForEmail(googleEmail)
       }]).select('*');
       
       if (error || !result || result.length === 0) throw new Error("Failed to create user");
       user = result[0];
+    } else {
+      user = await applyCanonicalRole(user);
     }
 
     // 4. Generate JWT
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" });
-    const { password: _, ...userWithoutPassword } = user;
+    const userWithoutPassword = sanitizeUser(user);
 
     // 5. Send success message to popup opener
     res.send(`
@@ -391,7 +522,7 @@ app.get("/api/auth/google/callback", async (req, res) => {
               window.opener.postMessage({ 
                 type: 'OAUTH_AUTH_SUCCESS', 
                 ...data
-              }, '*');
+              }, ${JSON.stringify(clientOrigin)});
               window.close();
             } else {
               window.location.href = '/';
@@ -410,24 +541,14 @@ app.get("/api/auth/google/callback", async (req, res) => {
 app.get("/api/admin/users", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-
-    const token = authHeader.split(" ")[1];
-    const decoded: any = jwt.verify(token, JWT_SECRET);
-    
-    const { data: admins } = await supabase.from('users').select('*').eq('id', decoded.id);
-    const admin = admins && admins.length > 0 ? admins[0] : null;
-    if (!admin || admin.role !== 'admin') {
-      return res.status(403).json({ error: "Forbidden" });
-    }
+    await requireAdminUser(req);
 
     const { data: users, error } = await supabase.from('users').select('id, email, firstName, lastName, role, createdAt').order('createdAt', { ascending: false });
     if (error) throw error;
     
     res.json(users);
-  } catch (error) {
-    res.status(401).json({ error: "Invalid token" });
+  } catch (error: any) {
+    res.status(error.statusCode || 401).json({ error: error.message || "Invalid token" });
   }
 });
 
@@ -437,14 +558,7 @@ app.get("/api/admin/users", async (req, res) => {
 app.post("/api/admin/orders/:id/ship", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-    const token = authHeader.split(" ")[1];
-    const decoded: any = jwt.verify(token, JWT_SECRET);
-    
-    const { data: admins } = await supabase.from('users').select('*').eq('id', decoded.id);
-    const admin = admins && admins.length > 0 ? admins[0] : null;
-    if (!admin || admin.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
+    await requireAdminUser(req);
 
     const orderId = req.params.id;
     const carrier = "DHL Express";
@@ -468,7 +582,7 @@ app.post("/api/admin/orders/:id/ship", async (req, res) => {
 
     res.json({ success: true, trackingNumber });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -490,7 +604,7 @@ app.post("/api/webhooks/shipping", async (req, res) => {
     console.log(`[DAWL WEBHOOK] Shipping update for ${orderId}: ${status} at ${location}`);
     res.json({ received: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -505,7 +619,7 @@ app.get("/api/orders/:id", async (req, res) => {
     const { data: updates } = await supabase.from('order_updates').select('*').eq('orderId', req.params.id).order('timestamp', { ascending: false });
     res.json({ ...order, updates: updates || [] });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -531,14 +645,7 @@ app.get("/api/user/orders", async (req, res) => {
 app.get("/api/admin/orders", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-    const token = authHeader.split(" ")[1];
-    const decoded: any = jwt.verify(token, JWT_SECRET);
-    
-    const { data: admins } = await supabase.from('users').select('*').eq('id', decoded.id);
-    const admin = admins && admins.length > 0 ? admins[0] : null;
-    if (!admin || admin.role !== 'admin') return res.status(403).json({ error: "Forbidden" });
+    await requireAdminUser(req);
 
     const { data: orders, error } = await supabase.from('orders').select('*, users(email)').order('createdAt', { ascending: false });
     if (error) throw error;
