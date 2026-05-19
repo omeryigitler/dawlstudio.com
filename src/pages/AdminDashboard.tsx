@@ -345,7 +345,7 @@ export function AdminDashboard() {
                                           <div className="flex items-center gap-4">
                                             <div className="w-12 h-12 bg-gold/5 rounded overflow-hidden flex items-center justify-center">
                                               {display.image ? (
-                                                <img src={display.image} alt={display.name} className="w-full h-full object-cover opacity-80" />
+                                                <img src={display.image} alt={display.name} className="w-full h-full object-cover opacity-80" loading="lazy" decoding="async" />
                                               ) : (
                                                 <Package size={16} className="text-gold/40" />
                                               )}

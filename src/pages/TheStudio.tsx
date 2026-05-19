@@ -31,6 +31,8 @@ export function TheStudio() {
               src="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?q=80&w=800&auto=format&fit=crop" 
               alt="Studio Sanctuary" 
               referrerPolicy="no-referrer"
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity duration-1000"
             />
             <div className="absolute inset-0 bg-gradient-to-tr from-charcoal via-transparent to-gold/5 pointer-events-none" />
@@ -62,6 +64,8 @@ export function TheStudio() {
               src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?q=80&w=800&auto=format&fit=crop" 
               alt="Studio Materiality" 
               referrerPolicy="no-referrer"
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity duration-1000"
             />
             <div className="absolute inset-0 bg-gradient-to-bl from-charcoal via-transparent to-gold/5 pointer-events-none" />

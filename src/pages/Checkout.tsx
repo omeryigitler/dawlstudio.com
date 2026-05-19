@@ -384,6 +384,8 @@ export function Checkout() {
                         alt={item.product.name}
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
+                        loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">

@@ -9,7 +9,7 @@ export function SlidingDoors({ onComplete }: { onComplete: () => void }) {
     document.body.style.overflow = "hidden";
     const timer = setTimeout(() => {
       setIsAnimating(false);
-    }, 4500); // Total animation duration
+    }, 2600);
 
     return () => {
       clearTimeout(timer);
@@ -34,7 +34,7 @@ export function SlidingDoors({ onComplete }: { onComplete: () => void }) {
           <motion.div
             initial={{ x: 0 }}
             animate={{ x: "-100%" }}
-            transition={{ duration: 2.5, ease: [0.76, 0, 0.24, 1], delay: 2 }}
+            transition={{ duration: 1.5, ease: [0.76, 0, 0.24, 1], delay: 1 }}
             className="w-1/2 h-full bg-[#121212] border-r border-[#C5A059]/40 relative overflow-hidden flex justify-end items-center shadow-[10px_0_30px_rgba(0,0,0,0.8)] z-20 pointer-events-auto"
           >
           </motion.div>
@@ -43,7 +43,7 @@ export function SlidingDoors({ onComplete }: { onComplete: () => void }) {
           <motion.div
             initial={{ x: 0 }}
             animate={{ x: "100%" }}
-            transition={{ duration: 2.5, ease: [0.76, 0, 0.24, 1], delay: 2 }}
+            transition={{ duration: 1.5, ease: [0.76, 0, 0.24, 1], delay: 1 }}
             className="w-1/2 h-full bg-[#121212] border-l border-[#C5A059]/40 relative overflow-hidden flex justify-start items-center shadow-[-10px_0_30px_rgba(0,0,0,0.8)] z-20 pointer-events-auto"
           >
           </motion.div>
@@ -52,7 +52,7 @@ export function SlidingDoors({ onComplete }: { onComplete: () => void }) {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: [0, 1, 0], scale: [0.95, 1, 1.05] }}
-            transition={{ duration: 2.5, ease: "easeInOut", times: [0, 0.4, 1] }}
+            transition={{ duration: 1.6, ease: "easeInOut", times: [0, 0.4, 1] }}
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center pointer-events-none"
           >
             <h1 className="text-4xl md:text-6xl font-display tracking-[0.2em] text-[#F5F5F0] gold-foil">
