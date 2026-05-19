@@ -17,7 +17,6 @@ let stripePromise: Promise<any> | null = null;
 const getStripePromise = async () => {
   if (!stripePromise) {
     try {
-      console.log("[DAWL] Fetching Stripe configuration from /api/config...");
       const res = await fetch("/api/config");
       if (!res.ok) {
         const text = await res.text();
@@ -26,11 +25,6 @@ const getStripePromise = async () => {
       }
       
       const data = await res.json();
-      console.log("[DAWL] /api/config response received:", { 
-        hasKey: !!data.publishableKey, 
-        debug: data.debug 
-      });
-      
       const publishableKey = data.publishableKey;
       
       const key = publishableKey || 
@@ -39,7 +33,6 @@ const getStripePromise = async () => {
                   (window as any).STRIPE_PUBLISHABLE_KEY;
 
       if (key) {
-        console.log("[DAWL] Initializing Stripe with key:", key.substring(0, 10) + "...");
         stripePromise = loadStripe(key);
       } else {
         console.error("[DAWL] Stripe publishable key not found in API config, env, or window");
@@ -53,7 +46,7 @@ const getStripePromise = async () => {
   return stripePromise;
 };
 
-function PaymentForm({ amount, onSuccess }: { amount: number; onSuccess: () => void }) {
+function PaymentForm({ amount, orderId }: { amount: number; orderId: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -70,7 +63,7 @@ function PaymentForm({ amount, onSuccess }: { amount: number; onSuccess: () => v
     const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/checkout/success`,
+        return_url: `${window.location.origin}/checkout/success?order_id=${encodeURIComponent(orderId)}`,
       },
     });
 
@@ -118,11 +111,13 @@ function PaymentForm({ amount, onSuccess }: { amount: number; onSuccess: () => v
 }
 
 export function Checkout() {
-  const { cartItems, cartTotal, clearCart } = useCart();
+  const { cartItems, cartTotal } = useCart();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [stripeInstance, setStripeInstance] = useState<any>(null);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     fullName: "",
     address: "",
@@ -170,8 +165,8 @@ export function Checkout() {
 
       const items = cartItems.map(item => ({
         id: item.product.id,
-        price: parseFloat(item.product.price.replace('€', '')),
-        quantity: item.quantity
+        quantity: item.quantity,
+        giftCard: item.giftCard || null
       }));
 
       const res = await fetch("/api/create-payment-intent", {
@@ -193,17 +188,15 @@ export function Checkout() {
 
       const data = await res.json();
       setClientSecret(data.clientSecret);
+      setOrderId(data.orderId);
+      setPaymentAmount(typeof data.amount === "number" ? data.amount : cartTotal);
+      setInitError(null);
     } catch (err: any) {
       console.error("[DAWL] Failed to fetch payment intent", err);
       setInitError(err.message);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleSuccess = () => {
-    clearCart();
-    navigate("/checkout/success");
   };
 
   if (cartItems.length === 0) {
@@ -351,11 +344,11 @@ export function Checkout() {
                     Retry Initialization
                   </button>
                 </div>
-              ) : clientSecret && stripeInstance ? (
+              ) : clientSecret && stripeInstance && orderId ? (
                 <Elements stripe={stripeInstance} options={{ clientSecret, appearance }}>
                   <PaymentForm 
-                    amount={cartTotal} 
-                    onSuccess={handleSuccess} 
+                    amount={paymentAmount || cartTotal}
+                    orderId={orderId}
                   />
                 </Elements>
               ) : (
@@ -391,6 +384,8 @@ export function Checkout() {
                         alt={item.product.name}
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
+                        loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">

@@ -6,7 +6,10 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 
 export function Layout() {
-  const [showIntro, setShowIntro] = useState(true);
+  const [showIntro, setShowIntro] = useState(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return !reduceMotion && sessionStorage.getItem("dawl_intro_seen") !== "true";
+  });
   const location = useLocation();
 
   useEffect(() => {
@@ -19,7 +22,10 @@ export function Layout() {
       <div className="vignette" />
       <div className="film-grain" />
 
-      {showIntro && <SlidingDoors onComplete={() => setShowIntro(false)} />}
+      {showIntro && <SlidingDoors onComplete={() => {
+        sessionStorage.setItem("dawl_intro_seen", "true");
+        setShowIntro(false);
+      }} />}
 
       <Navbar />
 

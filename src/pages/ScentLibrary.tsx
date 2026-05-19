@@ -89,6 +89,8 @@ export function ScentLibrary() {
                 src={scent.image} 
                 alt={scent.name} 
                 referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover opacity-40 hover:opacity-80 transition-opacity duration-1000"
               />
               <div className="absolute inset-0 bg-gradient-to-br from-charcoal via-transparent to-gold/5 pointer-events-none" />

@@ -146,6 +146,8 @@ export function Collections() {
                   src={sku.image} 
                   alt={sku.name} 
                   referrerPolicy="no-referrer"
+                  loading={idx < 2 ? "eager" : "lazy"}
+                  decoding="async"
                   className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                 />
               ) : (
