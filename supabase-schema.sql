@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'eur'::text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS "stripePaymentIntentId" TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS "paidAt" TIMESTAMP WITH TIME ZONE;
+ALTER TABLE public.orders ALTER COLUMN status SET DEFAULT 'pending_payment'::text;
 
 -- 3. Create Order Updates Table
 CREATE TABLE IF NOT EXISTS public.order_updates (
