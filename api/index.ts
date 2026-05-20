@@ -15,14 +15,6 @@ import fs from "fs";
 import { createClient } from "@supabase/supabase-js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import {
-  getCarrierCustomerNote,
-  getCarrierDisplayName,
-  getCarrierTrackingUrl,
-  getShipmentStatusLabel,
-  getTrackingProviderType,
-  isMaltaPostCarrier,
-} from "../src/utils/carriers.ts";
 
 console.log("[DAWL] api/index.ts execution started");
 
@@ -68,6 +60,144 @@ const PRODUCT_CATALOG: Record<string, { unitAmount: number; currency: "eur"; nam
   "DS-P-W-02-220": { unitAmount: 9500, currency: "eur", name: "Limestone — Frankincense / Premium White" },
   "DS-P-B-02-220": { unitAmount: 9500, currency: "eur", name: "Limestone — Frankincense / Premium Black" },
 };
+
+type ApiTrackingProviderType = "external_link" | "api" | "manual";
+
+interface ApiCarrierConfig {
+  key: string;
+  displayName: string;
+  providerType: ApiTrackingProviderType;
+  aliases: string[];
+  trackingUrl: (trackingNumber?: string | null) => string | null;
+}
+
+const compactCarrier = (value: unknown) => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const encodeTrackingNumber = (trackingNumber?: string | null) => encodeURIComponent(String(trackingNumber || "").trim());
+
+const API_CARRIER_CONFIGS: Record<string, ApiCarrierConfig> = {
+  maltapost: {
+    key: "maltapost",
+    displayName: "MaltaPost",
+    providerType: "external_link",
+    aliases: ["maltapost", "malta post", "malta_post"],
+    trackingUrl: () => "https://www.maltapost.com/tracking",
+  },
+  dhl: {
+    key: "dhl",
+    displayName: "DHL",
+    providerType: "api",
+    aliases: ["dhl", "dhl express", "dhlexpress"],
+    trackingUrl: (trackingNumber) => {
+      const number = encodeTrackingNumber(trackingNumber);
+      return number ? `https://www.dhl.com/mt-en/home/tracking.html?tracking-id=${number}` : "https://www.dhl.com/mt-en/home/tracking.html";
+    },
+  },
+  ups: {
+    key: "ups",
+    displayName: "UPS",
+    providerType: "api",
+    aliases: ["ups", "united parcel service"],
+    trackingUrl: (trackingNumber) => {
+      const number = encodeTrackingNumber(trackingNumber);
+      return number ? `https://www.ups.com/track?tracknum=${number}` : "https://www.ups.com/track";
+    },
+  },
+  fedex: {
+    key: "fedex",
+    displayName: "FedEx",
+    providerType: "api",
+    aliases: ["fedex", "fedex express"],
+    trackingUrl: (trackingNumber) => {
+      const number = encodeTrackingNumber(trackingNumber);
+      return number ? `https://www.fedex.com/fedextrack/?trknbr=${number}` : "https://www.fedex.com/fedextrack/";
+    },
+  },
+  easypost: {
+    key: "easypost",
+    displayName: "EasyPost",
+    providerType: "api",
+    aliases: ["easypost", "easy post"],
+    trackingUrl: () => null,
+  },
+  aftership: {
+    key: "aftership",
+    displayName: "AfterShip",
+    providerType: "api",
+    aliases: ["aftership", "after ship"],
+    trackingUrl: () => null,
+  },
+  trackingmore: {
+    key: "trackingmore",
+    displayName: "TrackingMore",
+    providerType: "api",
+    aliases: ["trackingmore", "tracking more"],
+    trackingUrl: () => null,
+  },
+};
+
+function normalizeCarrierKey(carrier?: string | null) {
+  const value = compactCarrier(carrier);
+  if (!value) return "";
+
+  const match = Object.values(API_CARRIER_CONFIGS).find((config) => {
+    const names = [config.key, config.displayName, ...config.aliases].map(compactCarrier);
+    return names.includes(value);
+  });
+
+  return match?.key || value;
+}
+
+function getCarrierDisplayName(carrier?: string | null) {
+  const key = normalizeCarrierKey(carrier);
+  return API_CARRIER_CONFIGS[key]?.displayName || String(carrier || "Manual Carrier").trim();
+}
+
+function getTrackingProviderType(carrier?: string | null): ApiTrackingProviderType {
+  const key = normalizeCarrierKey(carrier);
+  return API_CARRIER_CONFIGS[key]?.providerType || "manual";
+}
+
+function getCarrierTrackingUrl(carrier?: string | null, trackingNumber?: string | null) {
+  const key = normalizeCarrierKey(carrier);
+  return API_CARRIER_CONFIGS[key]?.trackingUrl(trackingNumber) || null;
+}
+
+function isMaltaPostCarrier(carrier?: string | null) {
+  return normalizeCarrierKey(carrier) === "maltapost";
+}
+
+function getShipmentStatusLabel(status?: string | null) {
+  const normalized = String(status || "").trim().toLowerCase();
+  const labels: Record<string, string> = {
+    order_confirmed: "Order Confirmed",
+    preparing_shipment: "Preparing Shipment",
+    shipped: "Shipped",
+    in_transit: "In Transit",
+    out_for_delivery: "Out for Delivery",
+    delivered: "Delivered",
+    delayed: "Delayed",
+    exception: "Exception",
+    pending_payment: "Payment Pending",
+    paid: "Order Confirmed",
+    fulfilled: "Fulfilled",
+    payment_failed: "Payment Issue",
+    pending: "Pending",
+  };
+
+  return labels[normalized] || String(status || "Preparing Shipment").replace(/_/g, " ");
+}
+
+function getCarrierCustomerNote(carrier?: string | null) {
+  if (isMaltaPostCarrier(carrier)) {
+    return "MaltaPost tracking updates are available through the official MaltaPost tracking page.";
+  }
+
+  if (getTrackingProviderType(carrier) === "api") {
+    return "This carrier is ready for live API tracking once a provider such as EasyPost, AfterShip or TrackingMore is connected.";
+  }
+
+  return "Tracking updates are managed manually by the DAWL STUDIO team.";
+}
 
 function normalizeEmail(email: unknown) {
   return String(email || "").trim().toLowerCase();
