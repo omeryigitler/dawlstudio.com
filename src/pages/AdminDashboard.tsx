@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
-import { Users, Calendar, Mail, Shield, Package, Truck, ExternalLink, Box, Save, LinkIcon } from "lucide-react";
+import { Users, Calendar, Mail, Shield, Package, ExternalLink, Box, Save, LinkIcon } from "lucide-react";
 import { PRODUCTS } from "../constants/products";
 import {
   getCarrierTrackingUrl,
@@ -175,22 +175,6 @@ export function AdminDashboard() {
 
     fetchData();
   }, [user, navigate]);
-
-  const handleShipOrder = async (orderId: string) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`/api/admin/orders/${orderId}/ship`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error("Failed to ship order");
-      
-      await refreshOrders();
-      showToast(`Order ${orderId} has been marked as shipped.`, "success");
-    } catch (err: any) {
-      showToast(err.message, "error");
-    }
-  };
 
   const handleSaveTracking = async (order: OrderData) => {
     const draft = trackingDrafts[order.id] || createTrackingDraft(order);
@@ -418,15 +402,13 @@ export function AdminDashboard() {
                           </td>
                           <td className="py-6 px-4">
                             <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                              {(o.status === 'pending' || o.status === 'paid') && (
-                                <button 
-                                  onClick={() => handleShipOrder(o.id)}
-                                  className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gold hover:text-gold-light transition-colors"
-                                >
-                                  <Truck size={14} />
-                                  Ship
-                                </button>
-                              )}
+                              <button
+                                onClick={() => toggleExpandedOrder(o)}
+                                className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-gold hover:text-gold-light transition-colors"
+                              >
+                                <Box size={14} />
+                                Manage Tracking
+                              </button>
                               <Link 
                                 to={`/track/${o.id}`}
                                 className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-limestone/40 hover:text-gold transition-colors"

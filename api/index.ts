@@ -1025,36 +1025,13 @@ app.post("/api/webhooks/tracking", async (req, res) => {
   }
 });
 
-// 3. Admin: Simulate Shipping (WMS -> Carrier API)
 app.post("/api/admin/orders/:id/ship", async (req, res) => {
   if (!supabase) return res.status(500).json({ error: "Database not configured" });
   try {
     await requireAdminUser(req);
-
-    const orderId = req.params.id;
-    const carrier = "DHL Express";
-    const trackingNumber = `TRK${Math.floor(Math.random() * 1000000000)}`;
-
-    // Simulate Carrier API Call
-    console.log(`[DAWL CARRIER] Requesting tracking for ${orderId} from ${carrier}...`);
-
-    await updateOrderTrackingFields(orderId, {
-      carrier, 
-      trackingNumber,
-      trackingUrl: getCarrierTrackingUrl(carrier, trackingNumber),
-      shipmentStatus: 'shipped',
-      orderStatus: 'fulfilled',
-      updatedAt: new Date().toISOString(),
+    res.status(410).json({
+      error: "The quick ship simulator has been retired. Use /api/admin/orders/:id/tracking with real carrier details.",
     });
-
-    await supabase.from('order_updates').insert([{
-      orderId,
-      status: 'shipped',
-      location: 'Distribution Center',
-      description: `Package picked up by ${carrier}. Tracking: ${trackingNumber}`
-    }]);
-
-    res.json({ success: true, trackingNumber });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
