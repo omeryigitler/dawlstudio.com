@@ -17,9 +17,28 @@ UPDATE public.orders
 SET "orderNumber" = id
 WHERE "orderNumber" IS NULL;
 
+CREATE OR REPLACE FUNCTION pg_temp.dawl_safe_jsonb(value text)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN value::jsonb;
+EXCEPTION WHEN others THEN
+  RETURN NULL;
+END;
+$$;
+
 UPDATE public.orders
-SET "shippingCountry" = COALESCE("shippingCountry", "shippingAddress"->>'country')
-WHERE "shippingCountry" IS NULL;
+SET "shippingCountry" = COALESCE(
+  "shippingCountry",
+  CASE
+    WHEN pg_typeof("shippingAddress")::text IN ('json', 'jsonb')
+      THEN "shippingAddress"::jsonb->>'country'
+    ELSE pg_temp.dawl_safe_jsonb("shippingAddress"::text)->>'country'
+  END
+)
+WHERE "shippingCountry" IS NULL
+  AND "shippingAddress" IS NOT NULL;
 
 UPDATE public.orders
 SET "orderStatus" = status

@@ -1217,6 +1217,54 @@ function validateShippingAddress(shippingAddress: any) {
   };
 }
 
+function getDefaultEstimatedDelivery(country?: string | null) {
+  return String(country || "").trim().toLowerCase() === "malta" ? "2-3 business days" : "3-5 business days";
+}
+
+async function insertOrderWithTrackingDefaults(orderPayload: Record<string, any>) {
+  const now = new Date().toISOString();
+  const richPayload = {
+    ...orderPayload,
+    orderNumber: orderPayload.id,
+    shippingCountry: orderPayload.shippingAddress?.country || null,
+    shippingMethod: "standard",
+    orderStatus: "pending_payment",
+    shipmentStatus: "pending_payment",
+    estimatedDelivery: getDefaultEstimatedDelivery(orderPayload.shippingAddress?.country),
+    updatedAt: now,
+  };
+
+  const { error } = await supabase.from("orders").insert([richPayload]);
+  if (!error) return;
+
+  if (!isMissingColumnError(error)) throw new Error(error.message);
+
+  const { error: legacyError } = await supabase.from("orders").insert([orderPayload]);
+  if (legacyError) throw new Error(legacyError.message);
+}
+
+async function updateOrderPaymentState(orderId: string, fields: Record<string, any>) {
+  const nextFields = {
+    ...fields,
+    orderStatus: fields.status,
+    shipmentStatus: fields.status === "paid" ? "preparing_shipment" : fields.status,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from("orders").update(nextFields).eq("id", orderId);
+  if (!error) return;
+
+  if (!isMissingColumnError(error)) throw error;
+
+  const legacyFields = {
+    status: fields.status,
+    stripePaymentIntentId: fields.stripePaymentIntentId,
+    paidAt: fields.paidAt,
+  };
+  const { error: legacyError } = await supabase.from("orders").update(legacyFields).eq("id", orderId);
+  if (legacyError) throw legacyError;
+}
+
 async function getAuthenticatedUserId(req: Request) {
   const authHeader = req.headers.authorization;
   if (!authHeader) throw new Error("Unauthorized");
@@ -1251,7 +1299,7 @@ app.post("/api/create-payment-intent", async (req, res) => {
 
     // 1. Create a 'pending' order first
     const orderId = `DWL-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    const { error: orderInsertError } = await supabase.from('orders').insert([{
+    await insertOrderWithTrackingDefaults({
       id: orderId,
       userId,
       total: amount / 100,
@@ -1259,8 +1307,7 @@ app.post("/api/create-payment-intent", async (req, res) => {
       items: normalizedItems,
       shippingAddress: validatedShippingAddress,
       status: 'pending_payment'
-    }]);
-    if (orderInsertError) throw new Error(orderInsertError.message);
+    });
 
     // 2. Add initial update
     const { error: orderUpdateInsertError } = await supabase.from('order_updates').insert([{
@@ -1329,11 +1376,11 @@ app.post("/api/orders/:id/sync-payment", async (req, res) => {
     }
 
     if (paymentIntent.status === "succeeded" && order.status !== "paid") {
-      await supabase.from('orders').update({
+      await updateOrderPaymentState(orderId, {
         status: 'paid',
         stripePaymentIntentId: paymentIntent.id,
         paidAt: new Date().toISOString(),
-      }).eq('id', orderId);
+      });
 
       await supabase.from('order_updates').insert([{
         orderId,
@@ -1382,11 +1429,11 @@ app.post("/api/webhook", express.raw({ type: "application/json" }), async (req, 
         const order = orders && orders.length > 0 ? orders[0] : null;
         if (order) {
           if (order.status !== 'paid') {
-            await supabase.from('orders').update({
+            await updateOrderPaymentState(orderIdFromMetadata, {
               status: 'paid',
               stripePaymentIntentId: paymentIntent.id,
               paidAt: new Date().toISOString(),
-            }).eq('id', orderIdFromMetadata);
+            });
             await supabase.from('order_updates').insert([{
               orderId: orderIdFromMetadata,
               status: 'paid',
@@ -1404,10 +1451,10 @@ app.post("/api/webhook", express.raw({ type: "application/json" }), async (req, 
       const failedPaymentIntent: any = event.data.object;
       console.log(`[DAWL] Payment failed for ${failedPaymentIntent.id}`);
       if (failedPaymentIntent.metadata?.order_id && supabase) {
-        await supabase.from('orders').update({
+        await updateOrderPaymentState(failedPaymentIntent.metadata.order_id, {
           status: 'payment_failed',
           stripePaymentIntentId: failedPaymentIntent.id,
-        }).eq('id', failedPaymentIntent.metadata.order_id);
+        });
         await supabase.from('order_updates').insert([{
           orderId: failedPaymentIntent.metadata.order_id,
           status: 'payment_failed',
