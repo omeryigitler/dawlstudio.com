@@ -38,8 +38,8 @@ interface OrderData {
   shippingCountry?: string | null;
   shippingMethod?: string | null;
   createdAt: string;
-  items?: any[];
-  shippingAddress?: any;
+  items?: unknown;
+  shippingAddress?: unknown;
 }
 
 interface TrackingDraft {
@@ -50,6 +50,16 @@ interface TrackingDraft {
   estimatedDelivery: string;
   eventDescription: string;
   eventLocation: string;
+}
+
+interface ShippingAddressData {
+  fullName?: string;
+  firstName?: string;
+  lastName?: string;
+  address?: string;
+  city?: string;
+  zipCode?: string;
+  country?: string;
 }
 
 export function AdminDashboard() {
@@ -92,6 +102,27 @@ export function AdminDashboard() {
     };
   };
 
+  const parseLegacyJson = (value: unknown) => {
+    if (typeof value !== "string") return value;
+
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  };
+
+  const getOrderItems = (order: OrderData) => {
+    const items = parseLegacyJson(order.items);
+    return Array.isArray(items) ? items : [];
+  };
+
+  const getShippingAddress = (order: OrderData): ShippingAddressData => {
+    const address = parseLegacyJson(order.shippingAddress);
+    if (!address || typeof address !== "object" || Array.isArray(address)) return {};
+    return address as ShippingAddressData;
+  };
+
   const getDefaultShipmentStatus = (order: OrderData) => {
     if (order.shipmentStatus) return order.shipmentStatus;
     if (["shipped", "in_transit", "out_for_delivery", "delivered", "delayed", "exception"].includes(order.status)) return order.status;
@@ -102,6 +133,7 @@ export function AdminDashboard() {
     const carrier = order.carrier || "";
     const trackingNumber = order.trackingNumber || "";
     const trackingUrl = order.trackingUrl || getCarrierTrackingUrl(carrier, trackingNumber) || "";
+    const shippingAddress = getShippingAddress(order);
 
     return {
       carrier,
@@ -110,7 +142,7 @@ export function AdminDashboard() {
       shipmentStatus: getDefaultShipmentStatus(order),
       estimatedDelivery: order.estimatedDelivery || "",
       eventDescription: "",
-      eventLocation: order.shippingCountry || order.shippingAddress?.country || "Malta",
+      eventLocation: order.shippingCountry || shippingAddress.country || "Malta",
     };
   };
 
@@ -431,7 +463,7 @@ export function AdminDashboard() {
                                 <div>
                                   <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Ordered Items</h4>
                                   <div className="space-y-4">
-                                    {o.items?.map((item: any, idx: number) => {
+                                    {getOrderItems(o).map((item: any, idx: number) => {
                                       const display = getOrderItemDisplay(item);
 
                                       return (
@@ -459,23 +491,25 @@ export function AdminDashboard() {
                                 {/* Shipping Section */}
                                 <div onClick={(event) => event.stopPropagation()}>
                                   <h4 className="text-[10px] uppercase tracking-[0.3em] text-gold mb-6">Shipping & Tracking</h4>
-                                  <div className="bg-black/20 p-6 border border-gold/5 rounded-sm mb-6">
-                                    <p className="text-xs tracking-widest uppercase text-offwhite mb-2">
-                                      {o.shippingAddress?.fullName || `${o.shippingAddress?.firstName || ''} ${o.shippingAddress?.lastName || ''}`.trim()}
-                                    </p>
-                                    <p className="text-[10px] tracking-widest text-limestone/60 leading-relaxed">
-                                      {o.shippingAddress?.address}<br />
-                                      {o.shippingAddress?.city}{o.shippingAddress?.zipCode ? `, ${o.shippingAddress.zipCode}` : ''}<br />
-                                      {o.shippingAddress?.country}
-                                    </p>
-                                  </div>
-
                                   {(() => {
+                                    const shippingAddress = getShippingAddress(o);
                                     const draft = trackingDrafts[o.id] || createTrackingDraft(o);
                                     const providerType = getTrackingProviderType(draft.carrier);
 
                                     return (
-                                      <div className="bg-charcoal border border-gold/10 p-5 space-y-5">
+                                      <>
+                                        <div className="bg-black/20 p-6 border border-gold/5 rounded-sm mb-6">
+                                          <p className="text-xs tracking-widest uppercase text-offwhite mb-2">
+                                            {shippingAddress.fullName || `${shippingAddress.firstName || ''} ${shippingAddress.lastName || ''}`.trim() || "Shipping address"}
+                                          </p>
+                                          <p className="text-[10px] tracking-widest text-limestone/60 leading-relaxed">
+                                            {shippingAddress.address || "Address details saved with the order"}<br />
+                                            {[shippingAddress.city, shippingAddress.zipCode].filter(Boolean).join(", ")}<br />
+                                            {shippingAddress.country || o.shippingCountry || ""}
+                                          </p>
+                                        </div>
+
+                                        <div className="bg-charcoal border border-gold/10 p-5 space-y-5">
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                           <label className="block">
                                             <span className="block text-[10px] uppercase tracking-widest text-limestone/50 mb-2">Carrier</span>
@@ -583,7 +617,8 @@ export function AdminDashboard() {
                                             )}
                                           </button>
                                         </div>
-                                      </div>
+                                        </div>
+                                      </>
                                     );
                                   })()}
                                 </div>

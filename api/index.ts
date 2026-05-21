@@ -701,6 +701,29 @@ function sanitizeText(value: unknown, maxLength = 240) {
   return text ? text.slice(0, maxLength) : "";
 }
 
+function parseStoredJson(value: any) {
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeOrderShape(order: any) {
+  const items = parseStoredJson(order?.items);
+  const shippingAddress = parseStoredJson(order?.shippingAddress);
+
+  return {
+    ...order,
+    items: Array.isArray(items) ? items : [],
+    shippingAddress: shippingAddress && typeof shippingAddress === "object" && !Array.isArray(shippingAddress)
+      ? shippingAddress
+      : null,
+  };
+}
+
 function deriveOrderStatus(order: any) {
   return order?.orderStatus || order?.status || "order_confirmed";
 }
@@ -715,7 +738,8 @@ function deriveShipmentStatus(order: any) {
 }
 
 function deriveShippingCountry(order: any) {
-  return order?.shippingCountry || order?.shippingAddress?.country || null;
+  const shippingAddress = normalizeOrderShape(order).shippingAddress;
+  return order?.shippingCountry || shippingAddress?.country || null;
 }
 
 function defaultEstimatedDelivery(order: any) {
@@ -1115,7 +1139,7 @@ app.get("/api/admin/orders", async (req, res) => {
     if (error) throw error;
     
     const formattedOrders = (orders || []).map((o: any) => ({
-      ...o,
+      ...normalizeOrderShape(o),
       userEmail: o.users?.email
     }));
     
