@@ -6,6 +6,7 @@ import { useToast } from "../context/ToastContext";
 import { Users, Calendar, Mail, Shield, Package, ExternalLink, Box, Save, LinkIcon } from "lucide-react";
 import { PRODUCTS } from "../constants/products";
 import {
+  getCarrierDisplayName,
   getCarrierTrackingUrl,
   getShipmentStatusLabel,
   getTrackingProviderType,
@@ -130,7 +131,7 @@ export function AdminDashboard() {
   };
 
   const createTrackingDraft = (order: OrderData): TrackingDraft => {
-    const carrier = order.carrier || "";
+    const carrier = order.carrier ? getCarrierDisplayName(order.carrier) : "";
     const trackingNumber = order.trackingNumber || "";
     const trackingUrl = order.trackingUrl || getCarrierTrackingUrl(carrier, trackingNumber) || "";
     const shippingAddress = getShippingAddress(order);
