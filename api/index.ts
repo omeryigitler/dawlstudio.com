@@ -187,6 +187,24 @@ function getShipmentStatusLabel(status?: string | null) {
   return labels[normalized] || String(status || "Preparing Shipment").replace(/_/g, " ");
 }
 
+const SHIPMENT_MILESTONE_STATUSES = new Set([
+  "preparing_shipment",
+  "shipped",
+  "in_transit",
+  "out_for_delivery",
+  "delivered",
+  "delayed",
+  "exception",
+]);
+
+function normalizeStatusKey(status?: string | null) {
+  return String(status || "").trim().toLowerCase();
+}
+
+function isShipmentMilestoneStatus(status?: string | null) {
+  return SHIPMENT_MILESTONE_STATUSES.has(normalizeStatusKey(status));
+}
+
 function getCarrierCustomerNote(carrier?: string | null) {
   if (isMaltaPostCarrier(carrier)) {
     return "MaltaPost tracking updates are available through the official MaltaPost tracking page.";
@@ -759,6 +777,65 @@ function normalizeTrackingEvent(update: any) {
   };
 }
 
+function normalizeTrackingFingerprint(value?: string | null) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function getMentionedCarrierKeys(value?: string | null) {
+  const text = compactCarrier(value);
+  if (!text) return [];
+
+  return Object.values(API_CARRIER_CONFIGS)
+    .filter((config) => [config.key, config.displayName, ...config.aliases]
+      .map(compactCarrier)
+      .some((name) => name && text.includes(name)))
+    .map((config) => config.key);
+}
+
+function isLegacyEventForAnotherTrackingNumber(update: any, currentTrackingNumber?: string | null) {
+  const description = String(update?.description || "");
+  const currentNumber = normalizeTrackingFingerprint(currentTrackingNumber);
+  if (!currentNumber || !/\btracking\s*:/i.test(description)) return false;
+
+  return !normalizeTrackingFingerprint(description).includes(currentNumber);
+}
+
+function filterPublicTrackingUpdates(order: any, updates: any[]) {
+  const currentCarrierKey = normalizeCarrierKey(order?.carrier);
+
+  return updates.filter((update) => {
+    if (!isShipmentMilestoneStatus(update?.status)) return true;
+
+    const mentionedCarrierKeys = getMentionedCarrierKeys(update?.description);
+    if (currentCarrierKey && mentionedCarrierKeys.length > 0 && !mentionedCarrierKeys.includes(currentCarrierKey)) {
+      return false;
+    }
+
+    return !isLegacyEventForAnotherTrackingNumber(update, order?.trackingNumber);
+  });
+}
+
+function hasTrackingIdentityChanged(order: any, carrier: string, trackingNumber: string) {
+  const previousCarrier = normalizeCarrierKey(order?.carrier);
+  const nextCarrier = normalizeCarrierKey(carrier);
+  const previousTrackingNumber = normalizeTrackingFingerprint(order?.trackingNumber);
+  const nextTrackingNumber = normalizeTrackingFingerprint(trackingNumber);
+  const carrierChanged = Boolean(previousCarrier || nextCarrier) && previousCarrier !== nextCarrier;
+  const trackingNumberChanged = Boolean(previousTrackingNumber || nextTrackingNumber) && previousTrackingNumber !== nextTrackingNumber;
+
+  return carrierChanged || trackingNumberChanged;
+}
+
+async function clearShipmentMilestoneUpdates(orderId: string) {
+  const { error } = await supabase
+    .from("order_updates")
+    .delete()
+    .eq("orderId", orderId)
+    .in("status", Array.from(SHIPMENT_MILESTONE_STATUSES));
+
+  if (error) throw error;
+}
+
 async function getOrderUpdates(orderId: string) {
   const { data, error } = await supabase
     .from("order_updates")
@@ -854,7 +931,7 @@ function buildPublicTrackingPayload(order: any, updates: any[], liveTracking: an
   const trackingNumber = order?.trackingNumber || null;
   const carrier = order?.carrier ? getCarrierDisplayName(order.carrier) : null;
   const trackingUrl = order?.trackingUrl || getCarrierTrackingUrl(order?.carrier, trackingNumber);
-  const trackingEvents = updates.map(normalizeTrackingEvent);
+  const trackingEvents = filterPublicTrackingUpdates(order, updates).map(normalizeTrackingEvent);
   const fallbackEvent = {
     status: shipmentStatus,
     description: getShipmentStatusLabel(shipmentStatus),
@@ -958,6 +1035,7 @@ app.post("/api/admin/orders/:id/tracking", async (req, res) => {
 
     if (!carrier) return res.status(400).json({ error: "Carrier is required" });
 
+    const shouldReplaceTrackingTimeline = hasTrackingIdentityChanged(order, carrier, trackingNumber);
     const nextOrderStatus = ["shipped", "in_transit", "out_for_delivery"].includes(shipmentStatus)
       ? "fulfilled"
       : shipmentStatus === "delivered"
@@ -973,6 +1051,10 @@ app.post("/api/admin/orders/:id/tracking", async (req, res) => {
       orderStatus: nextOrderStatus,
       updatedAt: new Date().toISOString(),
     });
+
+    if (shouldReplaceTrackingTimeline) {
+      await clearShipmentMilestoneUpdates(orderId);
+    }
 
     await supabase.from("order_updates").insert([{
       orderId,
