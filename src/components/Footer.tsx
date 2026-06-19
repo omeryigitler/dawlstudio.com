@@ -45,9 +45,22 @@ export function Footer() {
       </div>
 
       <div className="max-w-7xl mx-auto mt-16 pt-8 border-t border-limestone/10 flex flex-col md:flex-row justify-between items-center gap-4">
-        <p className="text-xs text-limestone/60 uppercase tracking-widest">
-          &copy; {new Date().getFullYear()} DAWL STUDIO. All rights reserved.
-        </p>
+        <div className="text-center md:text-left space-y-2">
+          <p className="text-xs text-limestone/60 uppercase tracking-widest">
+            &copy; {new Date().getFullYear()} DAWL STUDIO. All rights reserved.
+          </p>
+          <p className="text-xs text-limestone/50 tracking-widest">
+            Designed &amp; Developed by{" "}
+            <a
+              href="https://omeryigitler.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-limestone/70 hover:text-gold hover:opacity-90 transition-all duration-300"
+            >
+              Ömer YİĞİTLER
+            </a>
+          </p>
+        </div>
         <div className="flex gap-6 text-xs text-limestone/60 uppercase tracking-widest">
           <a href="#" className="hover:text-gold transition-colors">Instagram</a>
           <a href="#" className="hover:text-gold transition-colors">Pinterest</a>
