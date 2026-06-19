@@ -54,13 +54,13 @@ export function Footer() {
         </div>
       </div>
 
-      <p className="max-w-7xl mx-auto mt-8 text-center text-xs text-limestone/50 tracking-widest">
+      <p className="max-w-7xl mx-auto mt-8 text-center text-[0.9rem] text-limestone/50 tracking-widest">
         Designed &amp; Developed by{" "}
         <a
           href="https://omeryigitler.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="gold-foil inline-block text-[1.2em] hover:opacity-80 transition-opacity duration-300"
+          className="gold-foil inline-block hover:opacity-80 transition-opacity duration-300"
         >
           Ömer YİĞİTLER
         </a>
