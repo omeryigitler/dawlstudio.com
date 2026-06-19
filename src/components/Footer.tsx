@@ -49,17 +49,17 @@ export function Footer() {
           <p className="text-xs text-limestone/60 uppercase tracking-widest">
             &copy; {new Date().getFullYear()} DAWL STUDIO. All rights reserved.
           </p>
-          <p className="text-xs text-limestone/50 tracking-widest">
-            Designed &amp; Developed by{" "}
+          <div className="text-xs text-limestone/50 tracking-widest">
+            <p>Designed &amp; Developed by</p>
             <a
               href="https://omeryigitler.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-limestone/70 hover:text-gold hover:opacity-90 transition-all duration-300"
+              className="gold-foil inline-block hover:opacity-80 transition-opacity duration-300"
             >
               Ömer YİĞİTLER
             </a>
-          </p>
+          </div>
         </div>
         <div className="flex gap-6 text-xs text-limestone/60 uppercase tracking-widest">
           <a href="#" className="hover:text-gold transition-colors">Instagram</a>
