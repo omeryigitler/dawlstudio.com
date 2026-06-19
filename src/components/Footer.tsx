@@ -45,27 +45,26 @@ export function Footer() {
       </div>
 
       <div className="max-w-7xl mx-auto mt-16 pt-8 border-t border-limestone/10 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="text-center md:text-left space-y-2">
-          <p className="text-xs text-limestone/60 uppercase tracking-widest">
-            &copy; {new Date().getFullYear()} DAWL STUDIO. All rights reserved.
-          </p>
-          <div className="text-xs text-limestone/50 tracking-widest">
-            <p>Designed &amp; Developed by</p>
-            <a
-              href="https://omeryigitler.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="gold-foil inline-block hover:opacity-80 transition-opacity duration-300"
-            >
-              Ömer YİĞİTLER
-            </a>
-          </div>
-        </div>
+        <p className="text-xs text-limestone/60 uppercase tracking-widest text-center md:text-left">
+          &copy; {new Date().getFullYear()} DAWL STUDIO. All rights reserved.
+        </p>
         <div className="flex gap-6 text-xs text-limestone/60 uppercase tracking-widest">
           <a href="#" className="hover:text-gold transition-colors">Instagram</a>
           <a href="#" className="hover:text-gold transition-colors">Pinterest</a>
         </div>
       </div>
+
+      <p className="max-w-7xl mx-auto mt-8 text-center text-xs text-limestone/50 tracking-widest">
+        Designed &amp; Developed by{" "}
+        <a
+          href="https://omeryigitler.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="gold-foil inline-block text-[1.2em] hover:opacity-80 transition-opacity duration-300"
+        >
+          Ömer YİĞİTLER
+        </a>
+      </p>
     </footer>
   );
 }
